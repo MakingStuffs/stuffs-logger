@@ -1,0 +1,245 @@
+import {
+  MAX_CLOCK_SKEW_FUTURE_MS,
+  MAX_CLOCK_SKEW_PAST_MS,
+  type IngestEnvelope,
+} from "@jf-logger/core";
+import { describe, expect, it } from "vitest";
+
+import { normaliseBatch } from "./normalise";
+
+const RECEIVED_AT = new Date("2026-09-01T12:00:00.000Z");
+
+const CONTEXT = {
+  applicationId: "app-1",
+  receivedAt: RECEIVED_AT,
+  fallbackUserAgent: null,
+};
+
+function makeEnvelope(
+  events: unknown[],
+  overrides: Partial<IngestEnvelope> = {},
+): IngestEnvelope {
+  return {
+    sdk: { name: "@jf-logger/sdk", version: "0.1.0" },
+    environment: "production",
+    source: "browser",
+    events,
+    ...overrides,
+  };
+}
+
+function validEvent(overrides: Record<string, unknown> = {}) {
+  return {
+    ts: RECEIVED_AT.getTime(),
+    level: "info",
+    message: "hello",
+    logger: "manual",
+    ...overrides,
+  };
+}
+
+describe("normaliseBatch", () => {
+  it("converts a valid event into a row", () => {
+    const result = normaliseBatch(makeEnvelope([validEvent()]), CONTEXT);
+
+    expect(result.rejected).toEqual([]);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      applicationId: "app-1",
+      level: "INFO",
+      logger: "MANUAL",
+      source: "BROWSER",
+      environment: "production",
+      message: "hello",
+      receivedAt: RECEIVED_AT,
+    });
+  });
+
+  it("attributes rows to the application from the context, never the body", () => {
+    const envelope = makeEnvelope([validEvent()]);
+    const result = normaliseBatch(envelope, {
+      ...CONTEXT,
+      applicationId: "app-real",
+    });
+
+    expect(result.rows[0]?.applicationId).toBe("app-real");
+  });
+
+  it("maps the wire taxonomy onto the database enums", () => {
+    const events = [
+      validEvent({ level: "trace", logger: "console" }),
+      validEvent({ level: "fatal", logger: "uncaughtException" }),
+    ];
+    const result = normaliseBatch(
+      makeEnvelope(events, { source: "node" }),
+      CONTEXT,
+    );
+
+    expect(result.rows.map((row) => row.level)).toEqual(["TRACE", "FATAL"]);
+    expect(result.rows.map((row) => row.logger)).toEqual([
+      "CONSOLE",
+      "UNCAUGHTEXCEPTION",
+    ]);
+    expect(result.rows.every((row) => row.source === "NODE")).toBe(true);
+  });
+
+  describe("partial acceptance", () => {
+    it("keeps the good events and reports the bad ones", () => {
+      const events = [validEvent(), { ts: 1, level: "nope" }, validEvent()];
+      const result = normaliseBatch(makeEnvelope(events), CONTEXT);
+
+      expect(result.rows).toHaveLength(2);
+      expect(result.rejected).toHaveLength(1);
+      expect(result.rejected[0]?.index).toBe(1);
+    });
+
+    it("reports the position of each rejected event", () => {
+      const events = [{ bad: true }, validEvent(), { alsoBad: true }];
+      const result = normaliseBatch(makeEnvelope(events), CONTEXT);
+
+      expect(result.rejected.map((entry) => entry.index)).toEqual([0, 2]);
+    });
+
+    it("rejects an event carrying an unknown key", () => {
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ applicationId: "app-other" })]),
+        CONTEXT,
+      );
+
+      expect(result.rows).toHaveLength(0);
+      expect(result.rejected).toHaveLength(1);
+    });
+  });
+
+  describe("timestamp clamping", () => {
+    it("keeps a plausible client timestamp", () => {
+      const ts = RECEIVED_AT.getTime() - 1000;
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ ts })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.timestamp).toEqual(new Date(ts));
+      expect(result.clampedCount).toBe(0);
+    });
+
+    it("clamps a timestamp too far in the future to the receive time", () => {
+      const ts = RECEIVED_AT.getTime() + MAX_CLOCK_SKEW_FUTURE_MS + 1000;
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ ts })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.timestamp).toEqual(RECEIVED_AT);
+      expect(result.clampedCount).toBe(1);
+    });
+
+    it("clamps a timestamp too far in the past to the receive time", () => {
+      const ts = RECEIVED_AT.getTime() - MAX_CLOCK_SKEW_PAST_MS - 1000;
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ ts })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.timestamp).toEqual(RECEIVED_AT);
+      expect(result.clampedCount).toBe(1);
+    });
+
+    it("always stamps receivedAt from the server, never the client", () => {
+      const ts = RECEIVED_AT.getTime() + MAX_CLOCK_SKEW_FUTURE_MS + 1000;
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ ts })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.receivedAt).toEqual(RECEIVED_AT);
+    });
+
+    it("counts each clamped event separately", () => {
+      const bad = validEvent({
+        ts: RECEIVED_AT.getTime() + MAX_CLOCK_SKEW_FUTURE_MS + 1,
+      });
+      const result = normaliseBatch(
+        makeEnvelope([bad, validEvent(), bad]),
+        CONTEXT,
+      );
+
+      expect(result.clampedCount).toBe(2);
+    });
+  });
+
+  describe("derived fields", () => {
+    it("derives device facets from the event user agent", () => {
+      const userAgent =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ userAgent })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]).toMatchObject({
+        deviceType: "MOBILE",
+        os: "iOS",
+        browser: "Safari",
+      });
+    });
+
+    it("falls back to the request user agent when the event has none", () => {
+      const result = normaliseBatch(makeEnvelope([validEvent()]), {
+        ...CONTEXT,
+        fallbackUserAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+      });
+
+      expect(result.rows[0]).toMatchObject({
+        deviceType: "DESKTOP",
+        os: "Windows",
+        browser: "Chrome",
+      });
+    });
+
+    it("records UNKNOWN when there is no user agent at all", () => {
+      const result = normaliseBatch(
+        makeEnvelope([validEvent()], { source: "node" }),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]).toMatchObject({
+        deviceType: "UNKNOWN",
+        os: null,
+        browser: null,
+      });
+    });
+
+    it("flattens the error payload onto the row", () => {
+      const error = { name: "TypeError", message: "boom", stack: "at thing" };
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ error })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]).toMatchObject({
+        errorName: "TypeError",
+        errorMessage: "boom",
+        errorStack: "at thing",
+      });
+    });
+
+    it("carries the envelope fields onto every row", () => {
+      const envelope = makeEnvelope([validEvent(), validEvent()], {
+        release: "abc123",
+        sessionId: "sess-1",
+        environment: "staging",
+      });
+      const result = normaliseBatch(envelope, CONTEXT);
+
+      for (const row of result.rows) {
+        expect(row).toMatchObject({
+          release: "abc123",
+          sessionId: "sess-1",
+          environment: "staging",
+        });
+      }
+    });
+  });
+});

@@ -1,0 +1,195 @@
+// jf-logger storage.
+//
+// Scale target: <5M events/month with 30-day retention, so roughly 5M live
+// rows in `log_events` at steady state. That is comfortably inside what plain
+// Postgres tables handle, so there is deliberately NO partitioning here: it
+// would buy nothing at this size and would cost every reader a partition-key
+// predicate plus a much more awkward retention story.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Migrations must not run through a transaction pooler (PgBouncer in
+  // transaction mode cannot hold the advisory lock they take). When the app
+  // runs against a pooled URL, point this at the direct connection.
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+/// Severity of a log event. Stored as an enum rather than free text so a
+/// filter cannot be handed a value the index has never seen.
+enum LogLevel {
+  TRACE
+  DEBUG
+  INFO
+  WARN
+  ERROR
+  FATAL
+}
+
+/// Where the batch that carried the event originated.
+enum LogSource {
+  BROWSER
+  NODE
+}
+
+/// Which SDK entry point produced the event.
+enum LoggerKind {
+  MANUAL
+  CONSOLE
+  ONERROR
+  UNHANDLEDREJECTION
+  UNCAUGHTEXCEPTION
+}
+
+/// Coarse device class, derived server-side from the user agent.
+enum DeviceType {
+  DESKTOP
+  MOBILE
+  TABLET
+  BOT
+  UNKNOWN
+}
+
+/// Which of the two ingest key designs a key follows.
+enum IngestKeyType {
+  /// `jfl_pub_<random>` — shipped in browser JS, usable only from an allowed origin.
+  PUBLIC
+  /// `jfl_sec_<keyId>_<secret>` — server-side, stored only as a hash.
+  SECRET
+}
+
+/// An application that sends logs. The tenant boundary for every query.
+model Application {
+  id          String   @id @default(cuid())
+  /// URL-safe identifier used in dashboard routes.
+  slug        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ingestKeys IngestKey[]
+  logEvents  LogEvent[]
+
+  @@map("applications")
+}
+
+/// A credential that authorises writes to the ingest endpoint.
+///
+/// One model covers both key types rather than two tables, because every
+/// consumer (verification, revocation, rate limiting, last-used tracking)
+/// treats them identically once the type has been branched on. The columns
+/// that apply to only one type are nullable and documented as such.
+model IngestKey {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  type IngestKeyType
+  /// Human label shown in the key-management UI. Never the key itself.
+  name String
+
+  /// PUBLIC keys only: the full literal key. Public keys are not secrets — they
+  /// are gated on `allowedOrigins`, not on being unguessable — so they are
+  /// stored verbatim and looked up directly on this unique index.
+  publicKey String? @unique
+
+  /// SECRET keys only: the non-secret `<keyId>` segment. Exists so verifying a
+  /// presented secret key is one indexed lookup rather than a scan-and-compare
+  /// over every hash in the table.
+  keyId String? @unique
+
+  /// SECRET keys only: SHA-256 hex digest of the `<secret>` segment. The secret
+  /// itself is shown once at creation and never persisted or logged.
+  secretHash String?
+
+  /// PUBLIC keys only: exact origins this key may be used from. Compared
+  /// byte-for-byte — no wildcards, no suffix matching.
+  allowedOrigins String[] @default([])
+
+  /// Set to disable the key without deleting it (and losing the audit trail).
+  revokedAt DateTime?
+
+  /// Best-effort usage signal, written at most once per minute per key so
+  /// ingest does not become a write amplifier. Never a security control.
+  lastUsedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Listing an application's keys in the management UI.
+  @@index([applicationId])
+  @@map("ingest_keys")
+}
+
+/// A single ingested log line.
+///
+/// INDEX RATIONALE — every index below serves a query the dashboard actually
+/// runs, and nothing else. On a 5M-row table each additional index is real
+/// write cost on the hottest path in the product, so speculative ones are
+/// omitted deliberately:
+///
+///  - `(applicationId, timestamp DESC)` — the default log stream: one app,
+///    newest first, optionally bounded by a date range. The leading equality
+///    column plus the ordered range column means Postgres walks the index in
+///    output order and never sorts.
+///  - `(applicationId, level, timestamp DESC)` — the most common refinement by
+///    far ("show me errors"). Level is low-cardinality, so it only earns its
+///    place ahead of the timestamp because it is an equality/IN predicate.
+///  - `(applicationId, environment, timestamp DESC)` — the second most common
+///    refinement, and the one that must stay fast when production traffic
+///    dwarfs staging.
+///  - `(receivedAt)` — the retention sweep's only predicate. It deliberately
+///    uses the SERVER clock, not the client one: a client that reports an old
+///    timestamp must not be able to make its rows immortal or delete them
+///    early.
+///
+/// Source, deviceType, sessionId and free-text message search have no index of
+/// their own on purpose: they are always applied on top of an application and
+/// time window, which the indexes above have already narrowed to a page's
+/// worth of rows.
+model LogEvent {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  /// The client's own clock, clamped into a plausible window around
+  /// `receivedAt`. Untrusted input — never used for retention.
+  timestamp DateTime
+  /// Server-assigned receipt time. The trustworthy one.
+  receivedAt DateTime @default(now())
+
+  level   LogLevel
+  message String
+  logger  LoggerKind
+  /// Arbitrary caller-supplied structured data, bounded in size and depth.
+  context Json?
+
+  environment String
+  release     String?
+  source      LogSource
+  sessionId   String?
+
+  url       String?
+  userAgent String?
+
+  /// Derived from `userAgent` at ingest so the dashboard can facet on them
+  /// without re-parsing 5M strings per query.
+  deviceType DeviceType?
+  os         String?
+  browser    String?
+
+  errorName    String?
+  errorMessage String?
+  errorStack   String?
+
+  @@index([applicationId, timestamp(sort: Desc)])
+  @@index([applicationId, level, timestamp(sort: Desc)])
+  @@index([applicationId, environment, timestamp(sort: Desc)])
+  @@index([receivedAt])
+  @@map("log_events")
+}

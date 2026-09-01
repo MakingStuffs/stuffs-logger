@@ -1,0 +1,9 @@
+/*
+ * The Salient UI package globals are the single source of truth for the brand:
+ * Tailwind v4 entry, brand tokens, the brand type faces and the base element
+ * layer. Nothing brand-related belongs in this file — add tokens to salient-ui
+ * instead, so the whole suite gets them.
+ */
+@import "@journey-further/salient-ui/globals-css";
+
+@source "../";

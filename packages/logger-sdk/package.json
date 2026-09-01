@@ -12,11 +12,13 @@
   },
   "scripts": {
     "build": "tsup",
-    "lint": "eslint .",
+    "lint": "eslint . --config ../../eslint.config.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": { "@jf-logger/core": "workspace:*" },
+  "dependencies": {
+    "@jf-logger/core": "workspace:*"
+  },
   "devDependencies": {
     "jsdom": "^30.0.1",
     "tsup": "^8.5.0",
