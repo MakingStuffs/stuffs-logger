@@ -1,0 +1,167 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { INGEST_KEY_HEADER } from "../contract";
+import { SECRET_KEY } from "../testing/fixtures";
+import { createHttpTransport } from "./transport";
+import type { IngestBatch } from "../contract";
+
+const ENDPOINT = "https://logs.example.com/api/v1/ingest";
+
+function makeBatch(events = 1): IngestBatch {
+  return {
+    sdk: { name: "@jf-logger/sdk", version: "0.1.0" },
+    environment: "test",
+    source: "node",
+    events: Array.from({ length: events }, (_unused, index) => ({
+      ts: 1_767_000_000_000,
+      level: "info" as const,
+      message: `event ${index}`,
+      logger: "manual" as const,
+    })),
+  };
+}
+
+function respond(
+  status: number,
+  headers: Record<string, string> = {},
+): Response {
+  return new Response(null, { status, headers });
+}
+
+describe("createHttpTransport", () => {
+  let request: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    request = vi.fn().mockResolvedValue(respond(202));
+    vi.stubGlobal("fetch", request);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function transport(report = vi.fn()) {
+    return createHttpTransport({
+      endpoint: ENDPOINT,
+      apiKey: SECRET_KEY,
+      report,
+    });
+  }
+
+  it("posts the batch with the ingest key header", async () => {
+    await transport().send({ batch: makeBatch(), urgent: false });
+
+    expect(request).toHaveBeenCalledWith(
+      ENDPOINT,
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "content-type": "application/json",
+          [INGEST_KEY_HEADER]: SECRET_KEY,
+        }),
+      }),
+    );
+  });
+
+  it("never sends the caller's cookies to the ingest endpoint", async () => {
+    await transport().send({ batch: makeBatch(), urgent: false });
+
+    expect(request.mock.calls[0]?.[1]).toMatchObject({ credentials: "omit" });
+  });
+
+  it("uses keepalive only on the unload path", async () => {
+    await transport().send({ batch: makeBatch(), urgent: true });
+    expect(request.mock.calls[0]?.[1]).toMatchObject({ keepalive: true });
+
+    await transport().send({ batch: makeBatch(), urgent: false });
+    expect(request.mock.calls[1]?.[1]).toMatchObject({ keepalive: false });
+  });
+
+  it("reports a successful send", async () => {
+    const outcome = await transport().send({
+      batch: makeBatch(3),
+      urgent: false,
+    });
+
+    expect(outcome).toEqual({ kind: "sent", accepted: 3 });
+  });
+
+  it("disables itself when the key is refused", async () => {
+    for (const status of [401, 403]) {
+      request.mockResolvedValueOnce(respond(status));
+
+      const outcome = await transport().send({
+        batch: makeBatch(),
+        urgent: false,
+      });
+
+      expect(outcome.kind, `status ${status}`).toBe("disabled");
+    }
+  });
+
+  it("drops a batch the server condemns", async () => {
+    for (const status of [400, 413]) {
+      request.mockResolvedValueOnce(respond(status));
+
+      const outcome = await transport().send({
+        batch: makeBatch(),
+        urgent: false,
+      });
+
+      expect(outcome.kind, `status ${status}`).toBe("dropped");
+    }
+  });
+
+  it("retries a rate limit, honouring Retry-After", async () => {
+    request.mockResolvedValueOnce(respond(429, { "retry-after": "30" }));
+
+    const outcome = await transport().send({
+      batch: makeBatch(),
+      urgent: false,
+    });
+
+    expect(outcome).toEqual({ kind: "retry", retryAfterMs: 30000 });
+  });
+
+  it("retries a server error", async () => {
+    request.mockResolvedValueOnce(respond(503));
+
+    expect(
+      (await transport().send({ batch: makeBatch(), urgent: false })).kind,
+    ).toBe("retry");
+  });
+
+  it("retries an opaque network failure rather than throwing", async () => {
+    const report = vi.fn();
+    request.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    const outcome = await transport(report).send({
+      batch: makeBatch(),
+      urgent: false,
+    });
+
+    expect(outcome).toEqual({ kind: "retry" });
+    expect(report).toHaveBeenCalled();
+  });
+
+  it("refuses an unload batch too large for the keepalive budget", async () => {
+    const batch = makeBatch();
+    batch.events[0] = { ...makeBatch().events[0]!, message: "x".repeat(70000) };
+
+    const outcome = await transport().send({ batch, urgent: true });
+
+    expect(outcome.kind).toBe("dropped");
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("disables itself where there is no fetch at all", async () => {
+    vi.stubGlobal("fetch", undefined);
+
+    const outcome = await transport().send({
+      batch: makeBatch(),
+      urgent: false,
+    });
+
+    expect(outcome.kind).toBe("disabled");
+  });
+});
