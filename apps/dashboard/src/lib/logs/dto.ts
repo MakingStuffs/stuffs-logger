@@ -37,26 +37,42 @@ export interface LogEventListItem {
   os: string | null;
   browser: string | null;
   errorName: string | null;
-  /**
-   * Whether the row has a `context` blob, so the list can show an indicator
-   * without shipping every blob in the payload.
-   */
+  /** Whether the row has a `context` blob at all, truncated or not. */
   hasContext: boolean;
+  /**
+   * The caller-supplied context blob, bounded for the list payload.
+   *
+   * The stream query reads this column regardless — it is on a row it is
+   * already fetching — so it is exposed rather than discarded, and the
+   * expanded row renders it without a second query. Redacted and sanitised at
+   * ingest, but still untrusted data: render it as TEXT, never as markup.
+   *
+   * `null` when the row has no context, and also when the whole value was too
+   * large to carry (`contextTruncated` tells the two apart).
+   */
+  context: unknown;
+  /**
+   * Whether `context` is a reduced version of what is stored. When true, the
+   * event's own page has the complete blob.
+   */
+  contextTruncated: boolean;
+  /** The stack trace, cut to the list budget. `null` when there is none. */
+  errorStack: string | null;
+  /** Whether `errorStack` was cut short. */
+  errorStackTruncated: boolean;
 }
 
 /**
  * A single log line in full.
  *
- * Separate from the list item because `context`, `userAgent` and the stack
- * trace are large and are only ever wanted one row at a time. Two audiences,
- * two projections.
+ * Separate from the list item because `userAgent`, `errorMessage` and the
+ * UNTRUNCATED context and stack are only ever wanted one row at a time. Two
+ * audiences, two projections — on a detail row both truncation flags are
+ * always `false`.
  */
 export interface LogEventDetail extends LogEventListItem {
   userAgent: string | null;
-  /** The caller-supplied context blob. Untrusted data — render it as text. */
-  context: unknown;
   errorMessage: string | null;
-  errorStack: string | null;
 }
 
 /** One page of the log stream. */

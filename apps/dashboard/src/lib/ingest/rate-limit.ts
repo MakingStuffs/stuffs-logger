@@ -1,20 +1,22 @@
 /**
- * Per-key rate limiting for the ingest endpoint.
- *
- * HONEST LIMITATION — THIS IS PER INSTANCE, NOT GLOBAL.
+ * Per-key rate limiting for the ingest endpoint — the FAST FIRST LINE, not the
+ * ceiling.
  *
  * The counters live in this module's memory. On Vercel (and any serverless
  * host) each concurrent instance has its own copy and instances come and go,
- * so the effective ceiling is `limit × live instances`, and a cold start
- * resets a caller's window. This is therefore a guard against an accidental
- * loop in a customer's app — a `console.log` inside a render, a retry storm —
- * and NOT a defence against a determined attacker with a valid key, who can
- * simply spread requests across instances.
+ * so the effective ceiling here is `limit × live instances`, and a cold start
+ * resets a caller's window. What it buys is cost: an accidental loop in a
+ * customer's app — a `console.log` inside a render, a retry storm — is refused
+ * for free, before the request touches Postgres.
  *
- * Making it real needs shared state (Redis / Vercel KV / Postgres) and a
- * network round trip on the hottest path in the product. That trade is worth
- * making when there is evidence it is needed; it is recorded as an open
- * question rather than pretended away here.
+ * THE DURABLE CEILING IS `./quota`, which counts every accepted batch into a
+ * per-application, per-UTC-day row in Postgres and refuses once the day's
+ * allowance is spent. That is the control that bounds a determined caller with
+ * a live key, because it survives instances and restarts; this one does not
+ * and does not claim to.
+ *
+ * Both run, in that order: the cheap check first, the durable one on the
+ * requests that get past it.
  */
 
 /** Requests permitted per key per window. */

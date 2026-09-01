@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 import type { IngestKeyRecord, IngestKeyStore } from "./keys";
+import type { ApplicationUsageStore } from "./quota";
 
 /**
  * The Prisma-backed {@link IngestKeyStore}.
@@ -82,6 +83,40 @@ export async function insertLogEvents(
   const result = await prisma.logEvent.createMany({ data: rows });
   return result.count;
 }
+
+/**
+ * The Prisma-backed {@link ApplicationUsageStore}.
+ *
+ * One `upsert` with atomic `increment` operations: the row is created on the
+ * day's first batch and advanced by every batch after it, in a single
+ * statement, so two instances writing concurrently are both counted. A
+ * read-then-write would lose one of them, and a ceiling that undercounts under
+ * load is a ceiling that fails exactly when it matters.
+ *
+ * `byteCount` is a BigInt column - a busy day passes two billion bytes long
+ * before it passes two billion events - and is narrowed to a number for the
+ * comparison, which is safe well past any plausible daily quota.
+ */
+export const prismaApplicationUsageStore: ApplicationUsageStore = {
+  async increment({ applicationId, day, delta }) {
+    const row = await prisma.applicationUsage.upsert({
+      where: { applicationId_day: { applicationId, day } },
+      create: {
+        applicationId,
+        day,
+        eventCount: delta.events,
+        byteCount: BigInt(delta.bytes),
+      },
+      update: {
+        eventCount: { increment: delta.events },
+        byteCount: { increment: BigInt(delta.bytes) },
+      },
+      select: { eventCount: true, byteCount: true },
+    });
+
+    return { eventCount: row.eventCount, byteCount: Number(row.byteCount) };
+  },
+};
 
 /**
  * Stamps a key's `lastUsedAt`.

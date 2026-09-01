@@ -15,11 +15,14 @@ import {
 } from "@/lib/ingest/cors-context";
 import { keyClassAllowsSource, verifyIngestKey } from "@/lib/ingest/keys";
 import { normaliseBatch, type RejectedEvent } from "@/lib/ingest/normalise";
+import { isOriginRegisteredCached } from "@/lib/ingest/origin-registry";
+import { consumeDailyQuota } from "@/lib/ingest/quota";
 import { consumeRateLimit } from "@/lib/ingest/rate-limit";
 import { shouldStampLastUsed } from "@/lib/ingest/last-used";
 import {
   insertLogEvents,
   isOriginRegistered,
+  prismaApplicationUsageStore,
   prismaIngestKeyStore,
   stampKeyLastUsed,
 } from "@/lib/ingest/store";
@@ -35,16 +38,21 @@ import {
  *
  *   1. key     — parse, look up, compare in constant time (401)
  *   2. origin  — exact match against that key's allowlist (403)
- *   3. rate    — count the request against the key's window (429)
+ *   3. rate    — count the request against the key's in-instance window (429)
  *   4. size    — reject an oversized body before parsing it (413)
  *   5. shape   — validate the envelope, then each event (400 / partial 202)
- *   6. write   — insert, attributing rows to the KEY's application
+ *   6. quota   — count the batch against the application's UTC day (429)
+ *   7. write   — insert, attributing rows to the KEY's application
  *
  * The credential is checked BEFORE the body is read, so an anonymous flood
  * costs one indexed lookup rather than a buffered payload, and the rate limit
  * applies to work this endpoint has not done yet. It also means every refusal
  * from step 3 onwards carries CORS headers, so the SDK reads a real status
  * instead of an opaque network error.
+ *
+ * Steps 3 and 6 are two different controls, not one repeated: step 3 is
+ * per-instance memory and is free, step 6 is a durable per-application ceiling
+ * in Postgres and is what actually bounds a leaked key.
  *
  * The application a row lands in comes from the verified key, never from the
  * body. There is no field a caller can set to write into someone else's logs.
@@ -68,8 +76,15 @@ interface IngestResult {
   clamped: number;
 }
 
+/** The parsed body, and the size of the payload it arrived in. */
+interface BoundedBody {
+  value: unknown;
+  /** Bytes on the wire, counted against the application's daily byte quota. */
+  byteLength: number;
+}
+
 /** Reads the body as bytes, refusing anything over the limit. */
-async function readBoundedBody(request: Request): Promise<unknown> {
+async function readBoundedBody(request: Request): Promise<BoundedBody> {
   // The advertised length is checked first so an oversized upload is refused
   // before it is buffered. It is a claim, not a fact, so the real size is
   // checked again below.
@@ -90,7 +105,7 @@ async function readBoundedBody(request: Request): Promise<unknown> {
   const text = new TextDecoder().decode(buffer);
 
   try {
-    return JSON.parse(text);
+    return { value: JSON.parse(text), byteLength: buffer.byteLength };
   } catch {
     throw new ApiError("INVALID_INPUT", "Request body must be valid JSON.");
   }
@@ -149,7 +164,8 @@ const handlePost = async (request: Request): Promise<NextResponse> => {
     );
   }
 
-  const envelope = parseIngestEnvelope(await readBoundedBody(request));
+  const body = await readBoundedBody(request);
+  const envelope = parseIngestEnvelope(body.value);
   if (!envelope.ok) {
     throw new ApiError("VALIDATION_FAILED", "Invalid ingest payload.", {
       details: { issues: envelope.issues },
@@ -162,6 +178,29 @@ const handlePost = async (request: Request): Promise<NextResponse> => {
       "This key cannot be used from a server-side source.",
       {
         logContext: `public key ${key.id} presented for source ${envelope.envelope.source}`,
+      },
+    );
+  }
+
+  // The durable ceiling. One write, once per batch — never once per event.
+  const quota = await consumeDailyQuota(
+    key.applicationId,
+    { events: envelope.envelope.events.length, bytes: body.byteLength },
+    { store: prismaApplicationUsageStore },
+  );
+
+  if (!quota.allowed) {
+    rememberCorsHeaders(request, {
+      ...corsHeaders(key.matchedOrigin),
+      "retry-after": String(quota.retryAfterSeconds),
+    });
+
+    throw new ApiError(
+      "QUOTA_EXCEEDED",
+      "This application has reached its daily ingest quota.",
+      {
+        details: { retryAfterSeconds: quota.retryAfterSeconds },
+        logContext: `application ${key.applicationId} hit ${quota.reason} (${quota.totals.eventCount} events, ${quota.totals.byteCount} bytes today)`,
       },
     );
   }
@@ -209,11 +248,21 @@ export const POST = withErrorHandler(
  * This grants nothing by itself: a browser that passes preflight still has to
  * present a valid key on the POST, and that POST re-checks the origin against
  * that specific key's own allowlist.
+ *
+ * AUTH TIER: PUBLIC. A preflight carries no credential and cannot, so the
+ * lookup behind it is cached and budgeted (see `lib/ingest/origin-registry`)
+ * rather than issued per request.
  */
 export async function OPTIONS(request: Request): Promise<NextResponse> {
   const origin = request.headers.get("origin");
 
-  if (origin === null || !(await isOriginRegistered(origin))) {
+  // Cached and budgeted: this path is unauthenticated, so it must not be a way
+  // to make an anonymous request cost a database query.
+  const registered =
+    origin !== null &&
+    (await isOriginRegisteredCached(origin, isOriginRegistered));
+
+  if (!registered) {
     return new NextResponse(null, { status: 204, headers: VARY_ORIGIN });
   }
 

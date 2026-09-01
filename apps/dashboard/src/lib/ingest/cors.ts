@@ -52,21 +52,3 @@ export function corsHeaders(matchedOrigin: string | null): ExtraHeaders {
     "access-control-max-age": String(PREFLIGHT_MAX_AGE_SECONDS),
   };
 }
-
-/**
- * Whether an origin is on a key's allowlist.
- *
- * Exact string equality, deliberately. Any normalisation — lowercasing a host,
- * ignoring a port, stripping a trailing slash, matching a suffix — widens the
- * allowlist in ways the operator who typed the entry did not ask for.
- *
- * @param origin - The request `Origin`, or `null` when absent.
- * @param allowedOrigins - The key's allowlist.
- */
-export function isOriginAllowed(
-  origin: string | null,
-  allowedOrigins: readonly string[],
-): boolean {
-  if (origin === null) return false;
-  return allowedOrigins.includes(origin);
-}

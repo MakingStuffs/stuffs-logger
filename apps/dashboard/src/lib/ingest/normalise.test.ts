@@ -1,4 +1,5 @@
 import {
+  DEFAULT_REDACTION_REPLACEMENT,
   MAX_CLOCK_SKEW_FUTURE_MS,
   MAX_CLOCK_SKEW_PAST_MS,
   type IngestEnvelope,
@@ -8,6 +9,11 @@ import { describe, expect, it } from "vitest";
 import { normaliseBatch } from "./normalise";
 
 const RECEIVED_AT = new Date("2026-09-01T12:00:00.000Z");
+
+/** Built from code points: the characters under test are invisible. */
+const ESC = String.fromCodePoint(0x1b);
+const NUL = String.fromCodePoint(0x00);
+const RIGHT_TO_LEFT_OVERRIDE = String.fromCodePoint(0x202e);
 
 const CONTEXT = {
   applicationId: "app-1",
@@ -240,6 +246,97 @@ describe("normaliseBatch", () => {
           environment: "staging",
         });
       }
+    });
+  });
+  describe("redaction", () => {
+    it("replaces a secret-shaped context key the client sent verbatim", () => {
+      const result = normaliseBatch(
+        makeEnvelope([
+          validEvent({ context: { apiKey: "live-secret", userId: "u1" } }),
+        ]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.context).toEqual({
+        apiKey: DEFAULT_REDACTION_REPLACEMENT,
+        userId: "u1",
+      });
+    });
+
+    it("redacts a secret nested inside the context", () => {
+      const context = {
+        request: { headers: { authorization: "Bearer live-secret" } },
+      };
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ context })]),
+        CONTEXT,
+      );
+
+      expect(JSON.stringify(result.rows[0]?.context)).not.toContain(
+        "live-secret",
+      );
+    });
+
+    it("redacts regardless of what the batch claims about itself", () => {
+      // Nothing in the wire contract can switch server-side redaction off:
+      // the SDK's own toggle never reaches this side of the boundary.
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ context: { password: "hunter2" } })], {
+          source: "node",
+        }),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.context).toEqual({
+        password: DEFAULT_REDACTION_REPLACEMENT,
+      });
+    });
+
+    it("leaves an event without context alone", () => {
+      const result = normaliseBatch(makeEnvelope([validEvent()]), CONTEXT);
+
+      expect(result.rows[0]?.context).toBeUndefined();
+    });
+  });
+
+  describe("text sanitisation", () => {
+    it("strips ANSI escapes from the message", () => {
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ message: `${ESC}[31mred${ESC}[0m` })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.message).toBe("red");
+    });
+
+    it("strips a bidi override that would visually reorder the message", () => {
+      const result = normaliseBatch(
+        makeEnvelope([
+          validEvent({ message: `deleted ${RIGHT_TO_LEFT_OVERRIDE}resu` }),
+        ]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.message).toBe("deleted resu");
+    });
+
+    it("strips escapes from the error stack but keeps its newlines", () => {
+      const error = { stack: `at foo${ESC}[0m\n  at bar` };
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ error })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.errorStack).toBe("at foo\n  at bar");
+    });
+
+    it("strips control characters from context strings", () => {
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ context: { note: `a${NUL}b`, count: 2 } })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.context).toEqual({ note: "ab", count: 2 });
     });
   });
 });

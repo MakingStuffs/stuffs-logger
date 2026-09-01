@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { corsHeaders, isOriginAllowed, VARY_ORIGIN } from "./cors";
+import { corsHeaders, VARY_ORIGIN } from "./cors";
 
 const ORIGIN = "https://app.example.test";
 
@@ -36,37 +36,5 @@ describe("corsHeaders", () => {
     expect(
       corsHeaders(ORIGIN)["access-control-allow-credentials"],
     ).toBeUndefined();
-  });
-});
-
-describe("isOriginAllowed", () => {
-  const allowed = [ORIGIN, "https://other.example.test"];
-
-  it("accepts an exact match", () => {
-    expect(isOriginAllowed(ORIGIN, allowed)).toBe(true);
-  });
-
-  it("refuses a missing origin", () => {
-    expect(isOriginAllowed(null, allowed)).toBe(false);
-  });
-
-  it("refuses an empty allowlist", () => {
-    expect(isOriginAllowed(ORIGIN, [])).toBe(false);
-  });
-
-  it.each([
-    ["a suffix attack", "https://app.example.test.evil.test"],
-    ["a prefix attack", "https://evil-app.example.test"],
-    ["a scheme downgrade", "http://app.example.test"],
-    ["an added port", "https://app.example.test:8443"],
-    ["a trailing slash", "https://app.example.test/"],
-    ["a case change", "https://APP.example.test"],
-    ["a subdomain", "https://sub.app.example.test"],
-  ])("refuses %s", (_label, origin) => {
-    expect(isOriginAllowed(origin, allowed)).toBe(false);
-  });
-
-  it("refuses the null origin string sent by sandboxed frames", () => {
-    expect(isOriginAllowed("null", allowed)).toBe(false);
   });
 });

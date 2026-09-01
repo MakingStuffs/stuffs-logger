@@ -1,7 +1,10 @@
 import { verifyApiToken } from "@journey-further/salient-auth/server";
-import { NextResponse } from "next/server";
+import type { NextResponse } from "next/server";
 
 import { APP_SLUG } from "@/constants/environment";
+import { ApiError } from "@/lib/api/errors";
+import { apiSuccess } from "@/lib/api/responses";
+import { withErrorHandler } from "@/lib/api/with-error-handler";
 import {
   RETENTION_DAYS,
   RETENTION_DELETE_BATCH_SIZE,
@@ -23,6 +26,12 @@ import { prisma } from "@/lib/db";
  * Scheduled from vercel.json at 03:00 UTC daily. Vercel Cron sends the
  * deployment's `CRON_SECRET` as the bearer token, so that variable must hold a
  * raw token minted for this app's catalog entry.
+ *
+ * It answers in the same envelope as every other endpoint here — thrown
+ * {@link ApiError}s through {@link withErrorHandler} — including on refusal. A
+ * cron caller has little use for a body, but an operator debugging a failing
+ * schedule at 03:00 has every use for `{ code, message }` instead of an empty
+ * 401, and a second response shape in the app is a second shape to maintain.
  */
 
 /** Node runtime: this talks to Postgres. */
@@ -42,9 +51,6 @@ export const maxDuration = 300;
  * useless as a way to hammer the database with delete sweeps.
  */
 const MIN_INTERVAL_MS = 60 * 60 * 1000;
-
-/** Authenticated, one-off work: never cached, refusals included. */
-const NO_STORE = { "cache-control": "no-store" } as const;
 
 const BEARER_SCHEME = "bearer";
 
@@ -97,7 +103,7 @@ async function deleteExpiredEvents(
   return { deleted, complete: false };
 }
 
-export async function GET(request: Request): Promise<NextResponse> {
+const handleGet = async (request: Request): Promise<NextResponse> => {
   const verification = await verifyApiToken(bearerToken(request), {
     applicationSlug: APP_SLUG,
     minIntervalMs: MIN_INTERVAL_MS,
@@ -106,44 +112,37 @@ export async function GET(request: Request): Promise<NextResponse> {
   if (!verification.ok) {
     // 401 for "invalid" — one flat reason, never saying which check failed —
     // and 429 for a good credential presented too soon.
-    const status = verification.reason === "rate_limited" ? 429 : 401;
-    return new NextResponse(null, { status, headers: NO_STORE });
+    if (verification.reason === "rate_limited") {
+      throw new ApiError(
+        "RATE_LIMITED",
+        "This job has already run too recently.",
+        { logContext: `retention token presented inside ${MIN_INTERVAL_MS}ms` },
+      );
+    }
+
+    throw new ApiError("UNAUTHORIZED", "Invalid credentials.", {
+      logContext: "retention token unknown, wrong app, revoked or expired",
+    });
   }
 
   const cutoff = new Date(Date.now() - RETENTION_WINDOW_MS);
+  const { deleted, complete } = await deleteExpiredEvents(cutoff);
 
-  try {
-    const { deleted, complete } = await deleteExpiredEvents(cutoff);
+  console.info(
+    `[retention] deleted ${deleted} events received before ${cutoff.toISOString()}` +
+      (complete
+        ? ""
+        : " (batch ceiling reached; remainder deferred to the next run)"),
+  );
 
-    console.info(
-      `[retention] deleted ${deleted} events received before ${cutoff.toISOString()}` +
-        (complete
-          ? ""
-          : " (batch ceiling reached; remainder deferred to the next run)"),
-    );
+  // An unexpected failure is left to the wrapper: it logs the real error and
+  // answers one fixed 500, which is exactly what was hand-written here before.
+  return apiSuccess({
+    deleted,
+    complete,
+    retentionDays: RETENTION_DAYS,
+    cutoff: cutoff.toISOString(),
+  });
+};
 
-    return NextResponse.json(
-      {
-        success: true as const,
-        data: {
-          deleted,
-          complete,
-          retentionDays: RETENTION_DAYS,
-          cutoff: cutoff.toISOString(),
-        },
-      },
-      { status: 200, headers: NO_STORE },
-    );
-  } catch (error) {
-    // One fixed shape whatever failed: a cron caller has no use for the
-    // detail, and the detail is exactly what must not leave the server.
-    console.error("[retention] sweep failed:", error);
-    return NextResponse.json(
-      {
-        success: false as const,
-        error: { code: "INTERNAL_ERROR", message: "Retention sweep failed." },
-      },
-      { status: 500, headers: NO_STORE },
-    );
-  }
-}
+export const GET = withErrorHandler({ context: "cron.retention" }, handleGet);

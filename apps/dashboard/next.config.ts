@@ -1,19 +1,26 @@
 import type { NextConfig } from "next";
 
-import { PORTAL_URL } from "./src/constants/environment";
-
 /**
- * Server Actions validate the request `Origin` against the `Host` header. This
- * app is served on its OWN SUBDOMAIN — it has exited the portal proxy — so the
- * only extra origin it needs to trust is the portal's, for the sign-out action
- * rendered in the shared sidebar.
+ * Extra origins Server Actions may be invoked from.
+ *
+ * Next validates a Server Action's request `Origin` against the `Host` header;
+ * anything added here widens that check, and every action in this app is
+ * internal-only — `revokeIngestKeyAction` included.
+ *
+ * THE PORTAL ORIGIN IS DELIBERATELY ABSENT. It was here for salient-ui's
+ * sign-out, but that action is defined inline in this app's own `AppShell` and
+ * is therefore posted from a page served on THIS origin; the portal never
+ * renders it. This app has also exited the portal proxy, so no page of ours is
+ * ever served under the portal's origin. Trusting it would let any page on the
+ * portal origin POST this app's actions with the viewer's cookies, for a
+ * capability nothing uses.
+ *
+ * The development entries stay: `next dev` is reached at both hostnames.
  */
 const allowedOrigins: string[] =
   process.env.NODE_ENV === "production"
     ? []
     : ["localhost:3000", "lvh.me:3000"];
-
-if (PORTAL_URL) allowedOrigins.push(PORTAL_URL.replace(/^https?:\/\//, ""));
 
 /**
  * Headers applied to every response.
@@ -26,10 +33,12 @@ if (PORTAL_URL) allowedOrigins.push(PORTAL_URL.replace(/^https?:\/\//, ""));
  * `Referrer-Policy` keeps filter terms — which can contain user identifiers —
  * out of the `Referer` sent to any URL a log line links to.
  *
- * A full `script-src` CSP is deliberately NOT set here: Next's inline bootstrap
- * and salient-ui's styles would both need accounting for, which is a change
- * with real breakage risk and belongs in its own piece of work rather than
- * riding along with the ingest API.
+ * The nonce-based `script-src` policy is NOT here, because a nonce is
+ * per-response and this list is static: `middleware.ts` ships it as
+ * `Content-Security-Policy-Report-Only`, and `lib/security/csp.ts` documents
+ * how it gets promoted to enforcing. `frame-ancestors` stays here, enforced,
+ * because a report-only header does not stop framing and this app must never
+ * be framed.
  */
 const SECURITY_HEADERS = [
   { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },

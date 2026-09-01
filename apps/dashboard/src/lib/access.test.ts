@@ -1,7 +1,7 @@
 import type { SalientSession } from "@journey-further/salient-auth/server";
 import { describe, expect, it } from "vitest";
 
-import { assertActiveViewer, assertInternalViewer } from "./access";
+import { assertInternalViewer } from "./access";
 import { ApiError } from "./api/errors";
 
 /**
@@ -38,39 +38,6 @@ function makeSession(
   };
 }
 
-describe("assertActiveViewer", () => {
-  it("allows an active user", () => {
-    expect(() => assertActiveViewer(makeSession())).not.toThrow();
-  });
-
-  it("refuses a deactivated user", () => {
-    expect(() => assertActiveViewer(makeSession({ isActive: false }))).toThrow(
-      ApiError,
-    );
-  });
-
-  it("refuses with UNAUTHORIZED", () => {
-    try {
-      assertActiveViewer(makeSession({ isActive: false }));
-      expect.unreachable("should have thrown");
-    } catch (error) {
-      expect(error).toBeInstanceOf(ApiError);
-      expect((error as ApiError).code).toBe("UNAUTHORIZED");
-      expect((error as ApiError).status).toBe(401);
-    }
-  });
-
-  it("never puts the user id in the client-facing message", () => {
-    try {
-      assertActiveViewer(makeSession({ isActive: false, id: "user-secret" }));
-      expect.unreachable("should have thrown");
-    } catch (error) {
-      expect((error as ApiError).message).not.toContain("user-secret");
-      expect((error as ApiError).logContext).toContain("user-secret");
-    }
-  });
-});
-
 describe("assertInternalViewer", () => {
   it.each(["INTERNAL_USER", "INTERNAL_ADMIN", "SUPER_ADMIN"] as const)(
     "allows an internal %s",
@@ -92,6 +59,27 @@ describe("assertInternalViewer", () => {
     } catch (error) {
       expect((error as ApiError).code).toBe("FORBIDDEN");
       expect((error as ApiError).status).toBe(403);
+    }
+  });
+
+  it("refuses a deactivated user with UNAUTHORIZED, not FORBIDDEN", () => {
+    try {
+      assertInternalViewer(makeSession({ isActive: false }));
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).code).toBe("UNAUTHORIZED");
+      expect((error as ApiError).status).toBe(401);
+    }
+  });
+
+  it("never puts the user id in the client-facing message", () => {
+    try {
+      assertInternalViewer(makeSession({ isActive: false, id: "user-secret" }));
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect((error as ApiError).message).not.toContain("user-secret");
+      expect((error as ApiError).logContext).toContain("user-secret");
     }
   });
 

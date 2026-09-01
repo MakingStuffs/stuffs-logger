@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   hashIngestSecret,
+  isOriginAllowed,
+  keyClassAllowsSource,
   verifyIngestKey,
   type IngestKeyRecord,
   type IngestKeyStore,
@@ -298,5 +300,58 @@ describe("verifyIngestKey", () => {
 
       expect(queries).toBe(0);
     });
+  });
+});
+
+describe("isOriginAllowed", () => {
+  const allowed = [ALLOWED_ORIGIN, "https://other.example.test"];
+
+  it("accepts an exact match", () => {
+    expect(isOriginAllowed(ALLOWED_ORIGIN, allowed)).toBe(true);
+  });
+
+  it("refuses a missing origin", () => {
+    expect(isOriginAllowed(null, allowed)).toBe(false);
+  });
+
+  it("refuses an empty allowlist", () => {
+    expect(isOriginAllowed(ALLOWED_ORIGIN, [])).toBe(false);
+  });
+
+  it.each([
+    ["a suffix attack", "https://app.example.test.evil.test"],
+    ["a prefix attack", "https://evil-app.example.test"],
+    ["a scheme downgrade", "http://app.example.test"],
+    ["an added port", "https://app.example.test:8443"],
+    ["a trailing slash", "https://app.example.test/"],
+    ["a case change", "https://APP.example.test"],
+    ["a subdomain", "https://sub.app.example.test"],
+  ])("refuses %s", (_label, origin) => {
+    expect(isOriginAllowed(origin, allowed)).toBe(false);
+  });
+
+  it("refuses the null origin string sent by sandboxed frames", () => {
+    expect(isOriginAllowed("null", allowed)).toBe(false);
+  });
+});
+
+describe("keyClassAllowsSource", () => {
+  it("allows a secret key to authenticate a node batch", () => {
+    expect(keyClassAllowsSource("SECRET", "node")).toBe(true);
+  });
+
+  it("allows a secret key to authenticate a browser batch", () => {
+    expect(keyClassAllowsSource("SECRET", "browser")).toBe(true);
+  });
+
+  it("allows a public key to authenticate a browser batch", () => {
+    expect(keyClassAllowsSource("PUBLIC", "browser")).toBe(true);
+  });
+
+  it("REFUSES a public key for a node batch", () => {
+    // The control that keeps the origin allowlist meaningful: a server-side
+    // caller can set any Origin it likes, so a public key must not be usable
+    // from one.
+    expect(keyClassAllowsSource("PUBLIC", "node")).toBe(false);
   });
 });

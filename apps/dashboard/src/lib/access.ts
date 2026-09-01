@@ -4,7 +4,7 @@ import type { SalientSession } from "@journey-further/salient-auth/server";
 import { ApiError } from "@/lib/api/errors";
 
 /**
- * The access checks every data-access function runs before it reads anything.
+ * The access check every data-access function runs before it reads anything.
  *
  * These take an ALREADY-RESOLVED session as an argument and never resolve one
  * themselves. A query helper that reaches for `getSession()` internally is a
@@ -20,11 +20,15 @@ import { ApiError } from "@/lib/api/errors";
 /**
  * Asserts the session belongs to a live account.
  *
+ * NOT exported: {@link assertInternalViewer} is the only gate this app has, and
+ * a second, weaker one available to import is a second one a call site can
+ * choose by mistake.
+ *
  * @param session - The resolved session, from `getSessionOrRedirect` or the
  *   granted arm of `getSession`.
  * @throws {ApiError} `UNAUTHORIZED` when the account is not active.
  */
-export function assertActiveViewer(session: SalientSession): void {
+function assertActiveViewer(session: SalientSession): void {
   if (!session.user.isActive) {
     throw new ApiError("UNAUTHORIZED", "Your account is no longer active.", {
       logContext: `inactive user ${session.user.id}`,
@@ -35,10 +39,14 @@ export function assertActiveViewer(session: SalientSession): void {
 /**
  * Asserts the session belongs to an internal Journey Further user.
  *
- * Ingest keys are credentials that can write into any application's logs, so
- * managing them is deliberately narrower than reading logs. Internality is
- * derived from SCOPE via the package's `isInternalUser` — never from the email
- * domain, which is not revocable.
+ * The gate on EVERY read and every mutation in this app. jf-logger is an
+ * internal engineering tool: one session sees every application's logs, and a
+ * log line carries whatever a customer application happened to log — request
+ * paths, user identifiers, error payloads. Ingest keys are write credentials
+ * on top of that. Neither is data a client-scoped session should reach.
+ *
+ * Internality is derived from SCOPE via the package's `isInternalUser` — never
+ * from the email domain, which is not revocable.
  *
  * @param session - The resolved session.
  * @throws {ApiError} `FORBIDDEN` when the caller is not internal.
@@ -49,9 +57,9 @@ export function assertInternalViewer(session: SalientSession): void {
   if (!isInternalUser(session)) {
     throw new ApiError(
       "FORBIDDEN",
-      "Only Journey Further staff can manage ingest keys.",
+      "Only Journey Further staff can use jf-logger.",
       {
-        logContext: `non-internal user ${session.user.id} attempted key management`,
+        logContext: `non-internal user ${session.user.id} refused`,
       },
     );
   }

@@ -12,6 +12,7 @@ export const API_ERROR_CODES = [
   "RESOURCE_NOT_FOUND",
   "PAYLOAD_TOO_LARGE",
   "RATE_LIMITED",
+  "QUOTA_EXCEEDED",
   "INTERNAL_ERROR",
 ] as const;
 
@@ -27,6 +28,9 @@ const STATUS_BY_CODE: Readonly<Record<ApiErrorCode, number>> = {
   RESOURCE_NOT_FOUND: 404,
   PAYLOAD_TOO_LARGE: 413,
   RATE_LIMITED: 429,
+  // Same status, different meaning, and the SDK needs to tell them apart:
+  // RATE_LIMITED clears in seconds, QUOTA_EXCEEDED not until UTC midnight.
+  QUOTA_EXCEEDED: 429,
   INTERNAL_ERROR: 500,
 };
 

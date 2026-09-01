@@ -116,6 +116,27 @@ function digestsMatch(presentedHex: string, storedHex: string | null): boolean {
 }
 
 /**
+ * Whether an origin is on a key's allowlist.
+ *
+ * Exact string equality, deliberately. Any normalisation — lowercasing a host,
+ * ignoring a port, stripping a trailing slash, matching a suffix — widens the
+ * allowlist in ways the operator who typed the entry did not ask for, and
+ * `https://app.example.test.evil.test` must never satisfy an entry for
+ * `https://app.example.test`.
+ *
+ * @param origin - The request `Origin`, or `null` when absent.
+ * @param allowedOrigins - The key's allowlist.
+ * @returns Whether the request may use the key.
+ */
+export function isOriginAllowed(
+  origin: string | null,
+  allowedOrigins: readonly string[],
+): boolean {
+  if (origin === null) return false;
+  return allowedOrigins.includes(origin);
+}
+
+/**
  * Verifies a presented ingest key against the store.
  *
  * @param presented - The raw `x-jf-key` header value, untrusted.
@@ -139,12 +160,8 @@ export async function verifyIngestKey(
     if (row === null || row.type !== "PUBLIC") return DENY_INVALID;
     if (row.revokedAt !== null) return DENY_INVALID;
 
-    // Exact string equality against the stored list. No wildcards, no suffix
-    // matching, no URL normalisation: `https://app.example.test.evil.test`
-    // must not satisfy an entry for `https://app.example.test`.
     const { origin } = options;
-    if (origin === null || !row.allowedOrigins.includes(origin))
-      return DENY_ORIGIN;
+    if (!isOriginAllowed(origin, row.allowedOrigins)) return DENY_ORIGIN;
 
     return {
       ok: true,

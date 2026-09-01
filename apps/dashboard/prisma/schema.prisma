@@ -11,8 +11,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   // Migrations must not run through a transaction pooler (PgBouncer in
   // transaction mode cannot hold the advisory lock they take). When the app
   // runs against a pooled URL, point this at the direct connection.
@@ -62,7 +62,15 @@ enum IngestKeyType {
   SECRET
 }
 
-/// An application that sends logs. The tenant boundary for every query.
+/// An application that sends logs.
+///
+/// The tenant column every log row carries, and the column a future
+/// per-application entitlement will filter on. TODAY IT IS NOT A GATE: reads
+/// are gated on internal scope instead (see `lib/logs/queries.ts`), because
+/// there is no mapping from a Salient client account to an Application yet.
+/// That mapping is a deliberate future extension, not an oversight - and until
+/// it exists, "internal staff only" is the honest boundary rather than a
+/// per-application one that would not actually be enforceable.
 model Application {
   id          String   @id @default(cuid())
   /// URL-safe identifier used in dashboard routes.
@@ -74,6 +82,7 @@ model Application {
 
   ingestKeys IngestKey[]
   logEvents  LogEvent[]
+  usage      ApplicationUsage[]
 
   @@map("applications")
 }
@@ -123,6 +132,10 @@ model IngestKey {
 
   // Listing an application's keys in the management UI.
   @@index([applicationId])
+  // The CORS preflight asks "does any live public key allow this origin?",
+  // which is a containment test over an array column. Without a GIN index that
+  // is a sequential scan, on an UNAUTHENTICATED path.
+  @@index([allowedOrigins(ops: ArrayOps)], type: Gin)
   @@map("ingest_keys")
 }
 
@@ -143,6 +156,13 @@ model IngestKey {
 ///  - `(applicationId, environment, timestamp DESC)` — the second most common
 ///    refinement, and the one that must stay fast when production traffic
 ///    dwarfs staging.
+///  - `(timestamp DESC, id DESC)` — the UNFILTERED explorer, which is the
+///    landing view and therefore the most-run query of the lot: no
+///    application, no level, `ORDER BY timestamp DESC, id DESC LIMIT n`. Every
+///    other index here is applicationId-leading and cannot serve it, so
+///    without this one the default page is a sequential scan plus a Top-N sort
+///    over the whole table. The `id` tie-break is part of the index because it
+///    is part of the ordering the cursor pagination depends on.
 ///  - `(receivedAt)` — the retention sweep's only predicate. It deliberately
 ///    uses the SERVER clock, not the client one: a client that reports an old
 ///    timestamp must not be able to make its rows immortal or delete them
@@ -159,7 +179,7 @@ model LogEvent {
 
   /// The client's own clock, clamped into a plausible window around
   /// `receivedAt`. Untrusted input — never used for retention.
-  timestamp DateTime
+  timestamp  DateTime
   /// Server-assigned receipt time. The trustworthy one.
   receivedAt DateTime @default(now())
 
@@ -190,6 +210,41 @@ model LogEvent {
   @@index([applicationId, timestamp(sort: Desc)])
   @@index([applicationId, level, timestamp(sort: Desc)])
   @@index([applicationId, environment, timestamp(sort: Desc)])
+  @@index([timestamp(sort: Desc), id(sort: Desc)])
   @@index([receivedAt])
   @@map("log_events")
+}
+
+/// A day's ingest volume for one application.
+///
+/// The DURABLE half of the ingest ceiling. The in-instance limiter in
+/// `lib/ingest/rate-limit.ts` is the fast first line and resets on every cold
+/// start; this table is what actually bounds how much a leaked key can write,
+/// because it survives instances, regions and restarts.
+///
+/// One row per application per UTC day, incremented ONCE per accepted batch -
+/// not per event - so the ceiling costs a single extra write per request
+/// rather than one per log line. Old rows are tiny and are left in place: the
+/// history of how much an application sent is worth more than the bytes.
+model ApplicationUsage {
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  /// Midnight UTC of the day these counters cover. UTC, not local time, so the
+  /// window is the same everywhere and a client's timezone cannot shift it.
+  day DateTime @db.Date
+
+  /// Events accepted for storage that day.
+  eventCount Int @default(0)
+
+  /// Request-body bytes accepted that day. BigInt because a busy application
+  /// passes two billion bytes in a day long before it passes two billion
+  /// events.
+  byteCount BigInt @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([applicationId, day])
+  @@map("application_usage")
 }

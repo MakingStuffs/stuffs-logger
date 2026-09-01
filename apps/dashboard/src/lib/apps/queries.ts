@@ -2,17 +2,21 @@ import type { Prisma } from "@prisma/client";
 import type { SalientSession } from "@journey-further/salient-auth/server";
 import { z } from "zod";
 
-import { assertActiveViewer, assertInternalViewer } from "@/lib/access";
+import { assertInternalViewer } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import type { ApplicationSummary, IngestKeySummary } from "@/lib/logs/dto";
 
 /**
  * Application and ingest-key reads.
  *
- * Same three rules as `lib/logs/queries.ts`: the session is passed in, the
- * query shape is a constant, and rows are projected before they are returned.
- * Key management is additionally gated on internal scope, because an ingest
- * key is a write credential.
+ * Same rules as `lib/logs/queries.ts`: every read is gated on
+ * `assertInternalViewer`, the session is passed in, the query shape is a
+ * constant, and rows are projected before they are returned.
+ *
+ * The application list is not public information inside the product — it names
+ * every client whose app reports to jf-logger — so it carries the same gate as
+ * the logs themselves. Per-application entitlement for client-scoped users is
+ * a deliberate future extension; see the note in `lib/logs/queries.ts`.
  */
 
 /** Columns an application listing exposes. */
@@ -94,7 +98,7 @@ function toIngestKeySummary(row: IngestKeyRow): IngestKeySummary {
 export async function listApplications(
   session: SalientSession,
 ): Promise<ApplicationSummary[]> {
-  assertActiveViewer(session);
+  assertInternalViewer(session);
 
   const rows = await prisma.application.findMany({
     select: APPLICATION_SELECT,
@@ -116,7 +120,7 @@ export async function getApplicationBySlug(
   session: SalientSession,
   slug: string,
 ): Promise<ApplicationSummary | null> {
-  assertActiveViewer(session);
+  assertInternalViewer(session);
 
   const parsed = applicationSlugSchema.safeParse(slug);
   if (!parsed.success) return null;

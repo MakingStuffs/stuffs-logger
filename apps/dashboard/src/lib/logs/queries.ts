@@ -2,7 +2,7 @@ import { ERROR_LEVELS } from "@jf-logger/core";
 import type { Prisma } from "@prisma/client";
 import type { SalientSession } from "@journey-further/salient-auth/server";
 
-import { assertActiveViewer } from "@/lib/access";
+import { assertInternalViewer } from "@/lib/access";
 import { prisma } from "@/lib/db";
 
 import type {
@@ -21,12 +21,25 @@ import {
   SOURCE_TO_DB,
 } from "./enums";
 import type { LogFilters } from "./filters";
+import { projectListContext, projectListStack } from "./projection";
 
 /**
  * The dashboard's only interface to log data.
  *
- * Three rules hold for everything in this file:
+ * Four rules hold for everything in this file:
  *
+ *  0. Every read is gated on `assertInternalViewer`. jf-logger is an internal
+ *     engineering tool: one session can see every application's logs, and log
+ *     lines carry whatever a customer application happened to log, so the read
+ *     gate is the same one that guards key management rather than a looser
+ *     "any active user" check.
+ *
+ *     PER-APPLICATION ENTITLEMENT — letting a client-scoped user read only
+ *     their own application's logs — is a deliberate FUTURE extension, not an
+ *     oversight. It needs a mapping from a Salient account to an Application
+ *     that does not exist yet; until it does, the honest boundary is "internal
+ *     staff only", and `Application` is the tenant column that extension will
+ *     filter on.
  *  1. The caller passes an already-resolved session. No helper here resolves
  *     one — see `lib/access.ts` for why.
  *  2. Queries are built from validated scalars only. No caller anywhere can
@@ -54,16 +67,18 @@ const LIST_SELECT = {
   os: true,
   browser: true,
   errorName: true,
+  // Read, not discarded: see `./projection` for why the heavy columns are
+  // returned to the list rather than reduced to a boolean and thrown away.
+  context: true,
+  errorStack: true,
   application: { select: { slug: true, name: true } },
 } as const satisfies Prisma.LogEventSelect;
 
-/** The list columns plus the heavy ones, for a single row. */
+/** The list columns plus the ones only a single row needs. */
 const DETAIL_SELECT = {
   ...LIST_SELECT,
   userAgent: true,
-  context: true,
   errorMessage: true,
-  errorStack: true,
 } as const satisfies Prisma.LogEventSelect;
 
 type ListRow = Prisma.LogEventGetPayload<{ select: typeof LIST_SELECT }>;
@@ -117,9 +132,21 @@ function buildWhere(filters: LogFilters): Prisma.LogEventWhereInput {
   return where;
 }
 
-/** Projects a row onto the list DTO. `hasContext` is passed in because the
- * list and detail queries learn it from different selectors. */
-function toListItem(row: ListRow, hasContext: boolean): LogEventListItem {
+/**
+ * Projects a row onto the list DTO, bounding the heavy fields.
+ *
+ * @param row - The selected row.
+ * @param bound - Whether to apply the list budgets. The detail projection
+ *   passes `false`: one row is exactly the case the budgets exist to defer to.
+ */
+function toListItem(row: ListRow, bound: boolean): LogEventListItem {
+  const context = bound
+    ? projectListContext(row.context)
+    : { context: row.context ?? null, truncated: false };
+  const stack = bound
+    ? projectListStack(row.errorStack)
+    : { errorStack: row.errorStack, truncated: false };
+
   return {
     id: row.id,
     applicationId: row.applicationId,
@@ -139,13 +166,12 @@ function toListItem(row: ListRow, hasContext: boolean): LogEventListItem {
     os: row.os,
     browser: row.browser,
     errorName: row.errorName,
-    hasContext,
+    hasContext: row.context !== null && row.context !== undefined,
+    context: context.context,
+    contextTruncated: context.truncated,
+    errorStack: stack.errorStack,
+    errorStackTruncated: stack.truncated,
   };
-}
-
-/** Whether a Prisma `Json?` column actually holds a value. */
-function hasJson(value: unknown): boolean {
-  return value !== null && value !== undefined;
 }
 
 /**
@@ -161,11 +187,11 @@ export async function listLogEvents(
   session: SalientSession,
   filters: LogFilters,
 ): Promise<LogEventPage> {
-  assertActiveViewer(session);
+  assertInternalViewer(session);
 
   const rows = await prisma.logEvent.findMany({
     where: buildWhere(filters),
-    select: { ...LIST_SELECT, context: true },
+    select: LIST_SELECT,
     // Matches the (applicationId, timestamp DESC) indexes. `id` is the
     // tie-break so the ordering is total: without it, rows sharing a
     // millisecond could be returned twice or skipped across page boundaries.
@@ -180,7 +206,7 @@ export async function listLogEvents(
   const hasMore = rows.length > filters.limit;
   const page = hasMore ? rows.slice(0, filters.limit) : rows;
 
-  const items = page.map((row) => toListItem(row, hasJson(row.context)));
+  const items = page.map((row) => toListItem(row, true));
 
   return {
     items,
@@ -200,7 +226,7 @@ export async function getLogEvent(
   session: SalientSession,
   id: string,
 ): Promise<LogEventDetail | null> {
-  assertActiveViewer(session);
+  assertInternalViewer(session);
 
   const row: DetailRow | null = await prisma.logEvent.findUnique({
     where: { id },
@@ -210,11 +236,9 @@ export async function getLogEvent(
   if (row === null) return null;
 
   return {
-    ...toListItem(row, hasJson(row.context)),
+    ...toListItem(row, false),
     userAgent: row.userAgent,
-    context: row.context ?? null,
     errorMessage: row.errorMessage,
-    errorStack: row.errorStack,
   };
 }
 
@@ -240,7 +264,7 @@ export async function getApplicationActivity(
   session: SalientSession,
   window: ActivityWindow,
 ): Promise<ApplicationActivity[]> {
-  assertActiveViewer(session);
+  assertInternalViewer(session);
 
   const timestamp = { gte: window.from, lte: window.to };
   const errorLevels = ERROR_LEVELS.map((level) => LEVEL_TO_DB[level]);
@@ -291,7 +315,7 @@ export async function listEnvironments(
   session: SalientSession,
   applicationId?: string,
 ): Promise<string[]> {
-  assertActiveViewer(session);
+  assertInternalViewer(session);
 
   const rows = await prisma.logEvent.findMany({
     where: applicationId === undefined ? {} : { applicationId },
