@@ -6,7 +6,10 @@ import { APP_DISPLAY_NAME } from "@/constants/environment";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: `${APP_DISPLAY_NAME} - by Journey Further`,
+  title: {
+    default: `${APP_DISPLAY_NAME} - by Journey Further`,
+    template: `%s · ${APP_DISPLAY_NAME}`,
+  },
   description:
     "Self-hosted application logging for Journey Further: search, filter and triage logs from every app in one place.",
 };

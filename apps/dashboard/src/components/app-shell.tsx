@@ -24,7 +24,7 @@ interface AppShellProps {
 const LINKS: BasicLink[] = [
   { label: "Overview", href: "/", icon: "LayoutDashboard" },
   { label: "Logs", href: "/logs", icon: "ScrollText" },
-  { label: "Applications", href: "/applications", icon: "Boxes" },
+  { label: "Applications", href: "/apps", icon: "Boxes" },
 ];
 
 /**
