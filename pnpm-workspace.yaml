@@ -1,0 +1,17 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+allowBuilds:
+  "@prisma/client": true
+  "@prisma/engines": true
+  prisma: true
+  sharp: true
+  unrs-resolver: true
+  esbuild: true
+
+# The salient packages ship as release candidates; pnpm's minimum-release-age
+# guard would otherwise refuse to install them.
+minimumReleaseAgeExclude:
+  - "@journey-further/salient-auth@6.0.0-rc.25"
+  - "@journey-further/salient-ui@7.0.0-rc.2"
