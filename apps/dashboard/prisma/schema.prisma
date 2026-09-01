@@ -248,3 +248,139 @@ model ApplicationUsage {
   @@id([applicationId, day])
   @@map("application_usage")
 }
+
+/// What a user may do.
+///
+/// Two values, because there are two decisions to make: everyone signed in
+/// reads logs and applications, and only an administrator manages ingest keys.
+/// There is deliberately no client/tenant scope - every account in this
+/// product belongs to Making Stuffs staff.
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+/// A person who can sign in.
+///
+/// The core columns are Better Auth's (confirmed against the installed
+/// `@better-auth/core` table definitions, not from memory); `role` and
+/// `isActive` are this app's, and both are declared `input: false` in
+/// `lib/auth/auth.ts` so no request body can set them.
+///
+/// `isActive` is a soft switch rather than a delete: the sessions, the audit
+/// value of who held which key, and the ability to turn an account back on are
+/// all worth keeping. `getSession` reports a deactivated account as its own
+/// denial reason and every data-access gate refuses it.
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  role     UserRole @default(MEMBER)
+  isActive Boolean  @default(true)
+
+  sessions Session[]
+  accounts Account[]
+
+  @@map("users")
+}
+
+/// A signed-in browser session.
+///
+/// Row-backed rather than a self-contained token, which is what makes sign-out
+/// and deactivation take effect immediately instead of at the next expiry.
+model Session {
+  id        String   @id @default(cuid())
+  /// The session token, as carried by the cookie.
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// A credential a user signs in with: a password, or a linked OAuth provider.
+///
+/// `password` holds Better Auth's scrypt hash for the email-and-password
+/// method and is null for OAuth rows. `issuer` plus `accountId` is the unique
+/// identity at the provider - `issuer` is required in better-auth 1.7.x, where
+/// older releases keyed this pair on `providerId`.
+model Account {
+  id                    String    @id @default(cuid())
+  issuer                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  /// Scrypt hash of the user's password. Never the password itself.
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([issuer, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+/// A short-lived verification value (email verification, password reset).
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+/// A credential for a machine caller - today, the retention cron.
+///
+/// Only a DIGEST is stored: the token is shown once when it is minted and is
+/// unrecoverable afterwards, so a database dump yields nothing presentable.
+/// The digest carries the unique index because that is how a presented token
+/// is looked up, in one indexed read rather than a scan-and-compare.
+///
+/// `lastUsedAt` is not a usage statistic - it is the minimum-interval throttle,
+/// claimed by the single conditional UPDATE in `lib/auth/api-token.ts`.
+/// Revoked rather than deleted, so the record of what a credential was
+/// survives its revocation.
+model ApiToken {
+  id String @id @default(cuid())
+
+  /// Human label shown to whoever manages tokens. Never the token itself.
+  name String
+
+  /// SHA-256 hex digest of the raw token.
+  tokenHash String @unique
+
+  /// When the token last won a claim. Written only on a SUCCESSFUL
+  /// verification, so refused attempts cannot slide the window forward.
+  lastUsedAt DateTime?
+
+  /// Set to disable the token without deleting it.
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@map("api_tokens")
+}

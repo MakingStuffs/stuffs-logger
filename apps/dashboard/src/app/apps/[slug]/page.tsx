@@ -1,4 +1,3 @@
-import { getSessionOrRedirect } from "@journey-further/salient-auth/server";
 import { AppHeader } from "@journey-further/salient-ui/components/app-header";
 import { Button } from "@journey-further/salient-ui/ui/button";
 import { PageContentWrapper } from "@journey-further/salient-ui/ui/page-content-wrapper";
@@ -14,8 +13,8 @@ import {
   AccessRefused,
   resolveAccess,
 } from "@/components/ui-states/access-refused";
-import { APP_SLUG } from "@/constants/environment";
 import { getApplicationBySlug, listIngestKeys } from "@/lib/apps/queries";
+import { getSessionOrRedirect } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
   title: "Application",
@@ -24,10 +23,11 @@ export const metadata: Metadata = {
 /**
  * One application: what it is, and the credentials that write into it.
  *
- * Both reads — the application and its keys — are gated on internal staff, so
- * they are resolved together: a caller who may see the application may see its
- * keys, and a caller who may not sees the refusal state instead of an error
- * page.
+ * THE TWO READS ARE RESOLVED SEPARATELY, because they no longer share a gate.
+ * Any live account may see an application; only an administrator may see its
+ * ingest keys, which are live write credentials. Resolving them together would
+ * mean a MEMBER hitting the key refusal and losing the whole page with it, so
+ * the refusal is rendered in the keys section's place instead.
  */
 export default async function ApplicationPage({
   params,
@@ -36,16 +36,13 @@ export default async function ApplicationPage({
 }) {
   const { slug } = await params;
 
-  const session = await getSessionOrRedirect(APP_SLUG, {
+  const session = await getSessionOrRedirect({
     returnPath: `/apps/${encodeURIComponent(slug)}`,
   });
 
-  const outcome = await resolveAccess(async () => {
-    const application = await getApplicationBySlug(session, slug);
-    if (application === null) return null;
-
-    return { application, keys: await listIngestKeys(session, application.id) };
-  });
+  const outcome = await resolveAccess(() =>
+    getApplicationBySlug(session, slug),
+  );
 
   if (!outcome.allowed) {
     return (
@@ -69,7 +66,13 @@ export default async function ApplicationPage({
   // `notFound` signals by throwing, so the loader returns null for a missing
   // slug and the page raises it out here, clear of the refusal catch.
   if (outcome.data === null) notFound();
-  const { application, keys } = outcome.data;
+  const application = outcome.data;
+
+  // The second, tighter gate. A refusal here is a designed state for this
+  // section, not a failure of the page around it.
+  const keysOutcome = await resolveAccess(() =>
+    listIngestKeys(session, application.id),
+  );
 
   return (
     <AppShell user={session.user}>
@@ -94,7 +97,14 @@ export default async function ApplicationPage({
       </AppHeader>
 
       <PageContentWrapper className="flex flex-col gap-8 px-6 py-8">
-        <IngestKeysSection application={application} keys={keys} />
+        {keysOutcome.allowed ? (
+          <IngestKeysSection
+            application={application}
+            keys={keysOutcome.data}
+          />
+        ) : (
+          <AccessRefused code={keysOutcome.code} />
+        )}
       </PageContentWrapper>
     </AppShell>
   );

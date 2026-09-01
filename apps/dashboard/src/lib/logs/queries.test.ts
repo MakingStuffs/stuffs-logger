@@ -1,7 +1,7 @@
-import type { SalientSession } from "@journey-further/salient-auth/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/errors";
+import type { AppSession, AppUser } from "@/lib/auth/types";
 import { prisma } from "@/lib/db";
 
 import {
@@ -18,7 +18,7 @@ import {
  * real, so these tests fail if the gate is weakened, and they assert that NO
  * QUERY IS ISSUED on refusal: a check that runs after the read has already
  * leaked the rows it was meant to protect. Deleting the gate line from any
- * function below turns its three denial tests red.
+ * function below turns its denial tests red.
  */
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -27,22 +27,17 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-function makeSession(
-  overrides: Partial<SalientSession["user"]> = {},
-): SalientSession {
+function makeSession(overrides: Partial<AppUser> = {}): AppSession {
   return {
     user: {
       id: "user-1",
       email: "someone@makingstuffs.co.uk",
       name: "Someone",
-      scope: "INTERNAL_USER",
+      role: "MEMBER",
+      image: null,
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
-      clients: [],
-      accounts: [],
-      apps: [],
-      appConfigData: null,
       ...overrides,
     },
     session: {
@@ -52,19 +47,19 @@ function makeSession(
       expiresAt: new Date(Date.now() + 3_600_000),
       createdAt: new Date(),
       updatedAt: new Date(),
+      ipAddress: null,
+      userAgent: null,
     },
   };
 }
 
-const CLIENT_SESSION = makeSession({ scope: "CLIENT_ADMIN" });
+const MEMBER_SESSION = makeSession();
+const ADMIN_SESSION = makeSession({ role: "ADMIN" });
 const DEACTIVATED_SESSION = makeSession({ isActive: false });
-const INTERNAL_SESSION = makeSession();
-
-const FILTERS = { limit: 50 } as const;
-const WINDOW = {
-  from: new Date("2026-09-01T00:00:00.000Z"),
-  to: new Date("2026-09-02T00:00:00.000Z"),
-};
+const DEACTIVATED_ADMIN_SESSION = makeSession({
+  role: "ADMIN",
+  isActive: false,
+});
 
 /**
  * The anonymous caller.
@@ -73,27 +68,25 @@ const WINDOW = {
  * session cannot compile — so the closest reachable state is a session object
  * with no identity behind it, which must be refused like any other.
  */
-const ANONYMOUS_SESSION = makeSession({
-  id: "",
-  email: "",
-  scope: "CLIENT_USER",
-  isActive: false,
-});
+const ANONYMOUS_SESSION = makeSession({ id: "", email: "", isActive: false });
+
+const FILTERS = { limit: 50 } as const;
+const WINDOW = {
+  from: new Date("2026-09-01T00:00:00.000Z"),
+  to: new Date("2026-09-02T00:00:00.000Z"),
+};
 
 /** Every query function under test, with a call that would hit the database. */
 const READS = [
-  [
-    "listLogEvents",
-    (session: SalientSession) => listLogEvents(session, FILTERS),
-  ],
-  ["getLogEvent", (session: SalientSession) => getLogEvent(session, "event-1")],
+  ["listLogEvents", (session: AppSession) => listLogEvents(session, FILTERS)],
+  ["getLogEvent", (session: AppSession) => getLogEvent(session, "event-1")],
   [
     "getApplicationActivity",
-    (session: SalientSession) => getApplicationActivity(session, WINDOW),
+    (session: AppSession) => getApplicationActivity(session, WINDOW),
   ],
   [
     "listEnvironments",
-    (session: SalientSession) => listEnvironments(session, "app-1"),
+    (session: AppSession) => listEnvironments(session, "app-1"),
   ],
 ] as const;
 
@@ -122,15 +115,15 @@ describe.each(READS)("%s", (_name, read) => {
     await expect(read(ANONYMOUS_SESSION)).rejects.toBeInstanceOf(ApiError);
   });
 
-  it("refuses a client-scoped caller with FORBIDDEN", async () => {
-    await expect(read(CLIENT_SESSION)).rejects.toMatchObject({
-      code: "FORBIDDEN",
-      status: 403,
+  it("refuses a deactivated user with UNAUTHORIZED", async () => {
+    await expect(read(DEACTIVATED_SESSION)).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+      status: 401,
     });
   });
 
-  it("refuses a deactivated user with UNAUTHORIZED", async () => {
-    await expect(read(DEACTIVATED_SESSION)).rejects.toMatchObject({
+  it("refuses a deactivated ADMIN — the role does not survive deactivation", async () => {
+    await expect(read(DEACTIVATED_ADMIN_SESSION)).rejects.toMatchObject({
       code: "UNAUTHORIZED",
       status: 401,
     });
@@ -139,8 +132,8 @@ describe.each(READS)("%s", (_name, read) => {
   it("issues no query at all when it refuses", async () => {
     for (const session of [
       ANONYMOUS_SESSION,
-      CLIENT_SESSION,
       DEACTIVATED_SESSION,
+      DEACTIVATED_ADMIN_SESSION,
     ]) {
       await expect(read(session)).rejects.toBeInstanceOf(ApiError);
     }
@@ -148,8 +141,14 @@ describe.each(READS)("%s", (_name, read) => {
     expect(prismaCallCount()).toBe(0);
   });
 
-  it("queries for an internal caller, proving the gate is what refused", async () => {
-    await read(INTERNAL_SESSION);
+  it("queries for a live MEMBER, proving the gate is what refused", async () => {
+    await read(MEMBER_SESSION);
+
+    expect(prismaCallCount()).toBeGreaterThan(0);
+  });
+
+  it("queries for a live ADMIN too — reading logs is not an admin capability", async () => {
+    await read(ADMIN_SESSION);
 
     expect(prismaCallCount()).toBeGreaterThan(0);
   });

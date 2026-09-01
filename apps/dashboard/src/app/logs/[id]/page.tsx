@@ -1,4 +1,3 @@
-import { getSessionOrRedirect } from "@journey-further/salient-auth/server";
 import { AppHeader } from "@journey-further/salient-ui/components/app-header";
 import { Button } from "@journey-further/salient-ui/ui/button";
 import { PageContentWrapper } from "@journey-further/salient-ui/ui/page-content-wrapper";
@@ -17,7 +16,7 @@ import {
   AccessRefused,
   resolveAccess,
 } from "@/components/ui-states/access-refused";
-import { APP_SLUG } from "@/constants/environment";
+import { getSessionOrRedirect } from "@/lib/auth/session";
 import { getLogEvent } from "@/lib/logs/queries";
 
 export const metadata: Metadata = {
@@ -39,7 +38,7 @@ export default async function LogEventPage({
 }) {
   const { id } = await params;
 
-  const session = await getSessionOrRedirect(APP_SLUG, {
+  const session = await getSessionOrRedirect({
     returnPath: `/logs/${encodeURIComponent(id)}`,
   });
 

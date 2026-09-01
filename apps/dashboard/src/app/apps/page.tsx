@@ -1,5 +1,3 @@
-import { getSessionOrRedirect } from "@journey-further/salient-auth/server";
-import type { SalientSession } from "@journey-further/salient-auth/server";
 import { AppHeader } from "@journey-further/salient-ui/components/app-header";
 import { Button } from "@journey-further/salient-ui/ui/button";
 import { PageContentWrapper } from "@journey-further/salient-ui/ui/page-content-wrapper";
@@ -17,8 +15,9 @@ import {
 } from "@/components/ui-states/access-refused";
 import { CardGridSkeleton } from "@/components/ui-states/card-grid-skeleton";
 import { EmptyState } from "@/components/ui-states/empty-state";
-import { APP_SLUG } from "@/constants/environment";
 import { listApplications } from "@/lib/apps/queries";
+import { getSessionOrRedirect } from "@/lib/auth/session";
+import type { AppSession } from "@/lib/auth/types";
 
 export const metadata: Metadata = {
   title: "Applications",
@@ -26,7 +25,7 @@ export const metadata: Metadata = {
 
 /** Every application that can send logs, and the way in to its ingest keys. */
 export default async function ApplicationsPage() {
-  const session = await getSessionOrRedirect(APP_SLUG, { returnPath: "/apps" });
+  const session = await getSessionOrRedirect({ returnPath: "/apps" });
 
   return (
     <AppShell user={session.user}>
@@ -52,7 +51,7 @@ export default async function ApplicationsPage() {
   );
 }
 
-async function ApplicationsContent({ session }: { session: SalientSession }) {
+async function ApplicationsContent({ session }: { session: AppSession }) {
   const outcome = await resolveAccess(() => listApplications(session));
   if (!outcome.allowed) return <AccessRefused code={outcome.code} />;
 

@@ -1,8 +1,8 @@
 import { ERROR_LEVELS } from "@stuffs-logger/core";
 import type { Prisma } from "@prisma/client";
-import type { SalientSession } from "@journey-further/salient-auth/server";
 
-import { assertInternalViewer } from "@/lib/access";
+import { assertActiveViewer } from "@/lib/access";
+import type { AppSession } from "@/lib/auth/types";
 import { prisma } from "@/lib/db";
 
 import type {
@@ -28,18 +28,16 @@ import { projectListContext, projectListStack } from "./projection";
  *
  * Four rules hold for everything in this file:
  *
- *  0. Every read is gated on `assertInternalViewer`. stuffs-logger is an internal
- *     engineering tool: one session can see every application's logs, and log
- *     lines carry whatever a customer application happened to log, so the read
- *     gate is the same one that guards key management rather than a looser
- *     "any active user" check.
+ *  0. Every read is gated on `assertActiveViewer`. One session sees every
+ *     application's logs, and log lines carry whatever an application happened
+ *     to log — so the gate is "a live account", and every account in this
+ *     product belongs to this company's staff.
  *
- *     PER-APPLICATION ENTITLEMENT — letting a client-scoped user read only
- *     their own application's logs — is a deliberate FUTURE extension, not an
- *     oversight. It needs a mapping from a Salient account to an Application
- *     that does not exist yet; until it does, the honest boundary is "internal
- *     staff only", and `Application` is the tenant column that extension will
- *     filter on.
+ *     PER-APPLICATION ENTITLEMENT — letting an account read only some
+ *     applications' logs — is a deliberate FUTURE extension, not an oversight.
+ *     It needs a mapping from a user to an Application that does not exist
+ *     yet; until it does, "a live staff account" is the honest boundary, and
+ *     `Application` is the tenant column that extension will filter on.
  *  1. The caller passes an already-resolved session. No helper here resolves
  *     one — see `lib/access.ts` for why.
  *  2. Queries are built from validated scalars only. No caller anywhere can
@@ -184,10 +182,10 @@ function toListItem(row: ListRow, bound: boolean): LogEventListItem {
  * const page = await listLogEvents(session, filters);
  */
 export async function listLogEvents(
-  session: SalientSession,
+  session: AppSession,
   filters: LogFilters,
 ): Promise<LogEventPage> {
-  assertInternalViewer(session);
+  assertActiveViewer(session);
 
   const rows = await prisma.logEvent.findMany({
     where: buildWhere(filters),
@@ -223,10 +221,10 @@ export async function listLogEvents(
  * @returns The projected row, or `null` when it does not exist.
  */
 export async function getLogEvent(
-  session: SalientSession,
+  session: AppSession,
   id: string,
 ): Promise<LogEventDetail | null> {
-  assertInternalViewer(session);
+  assertActiveViewer(session);
 
   const row: DetailRow | null = await prisma.logEvent.findUnique({
     where: { id },
@@ -261,10 +259,10 @@ export interface ActivityWindow {
  * @returns One row per application that has events in the window.
  */
 export async function getApplicationActivity(
-  session: SalientSession,
+  session: AppSession,
   window: ActivityWindow,
 ): Promise<ApplicationActivity[]> {
-  assertInternalViewer(session);
+  assertActiveViewer(session);
 
   const timestamp = { gte: window.from, lte: window.to };
   const errorLevels = ERROR_LEVELS.map((level) => LEVEL_TO_DB[level]);
@@ -312,10 +310,10 @@ export async function getApplicationActivity(
  * @returns Sorted, distinct environment names.
  */
 export async function listEnvironments(
-  session: SalientSession,
+  session: AppSession,
   applicationId?: string,
 ): Promise<string[]> {
-  assertInternalViewer(session);
+  assertActiveViewer(session);
 
   const rows = await prisma.logEvent.findMany({
     where: applicationId === undefined ? {} : { applicationId },

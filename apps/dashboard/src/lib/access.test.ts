@@ -1,30 +1,28 @@
-import type { SalientSession } from "@journey-further/salient-auth/server";
 import { describe, expect, it } from "vitest";
 
-import { assertInternalViewer } from "./access";
+import { assertActiveViewer, assertAdminViewer } from "./access";
 import { ApiError } from "./api/errors";
+import type { AppSession, AppUser } from "./auth/types";
 
 /**
- * `isInternalUser` is exercised for real rather than mocked: it is the whole
- * subject of these tests, and a mock would only prove the mock agrees with
- * itself. It derives internality from SCOPE, so the fixtures vary scope.
+ * The two gates, exercised for real.
+ *
+ * Nothing is mocked: the role predicate is the whole subject of these tests
+ * and a mock would only prove the mock agrees with itself. The fixtures vary
+ * exactly the two things a decision may depend on — the role, and whether the
+ * account is live.
  */
-function makeSession(
-  overrides: Partial<SalientSession["user"]> = {},
-): SalientSession {
+function makeSession(overrides: Partial<AppUser> = {}): AppSession {
   return {
     user: {
       id: "user-1",
       email: "someone@makingstuffs.co.uk",
       name: "Someone",
-      scope: "INTERNAL_USER",
+      role: "MEMBER",
+      image: null,
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
-      clients: [],
-      accounts: [],
-      apps: [],
-      appConfigData: null,
       ...overrides,
     },
     session: {
@@ -34,37 +32,29 @@ function makeSession(
       expiresAt: new Date(Date.now() + 3_600_000),
       createdAt: new Date(),
       updatedAt: new Date(),
+      ipAddress: null,
+      userAgent: null,
     },
   };
 }
 
-describe("assertInternalViewer", () => {
-  it.each(["INTERNAL_USER", "INTERNAL_ADMIN", "SUPER_ADMIN"] as const)(
-    "allows an internal %s",
-    (scope) => {
-      expect(() => assertInternalViewer(makeSession({ scope }))).not.toThrow();
-    },
-  );
+/**
+ * The anonymous caller.
+ *
+ * There is no "no session" arm in these signatures — a call site with no
+ * session cannot compile — so the closest reachable state is a session object
+ * with no identity behind it, which must be refused like any other.
+ */
+const ANONYMOUS_SESSION = makeSession({ id: "", email: "", isActive: false });
 
-  it.each(["CLIENT_USER", "CLIENT_ADMIN"] as const)("refuses a %s", (scope) => {
-    expect(() => assertInternalViewer(makeSession({ scope }))).toThrow(
-      ApiError,
-    );
+describe("assertActiveViewer", () => {
+  it.each(["MEMBER", "ADMIN"] as const)("allows a live %s", (role) => {
+    expect(() => assertActiveViewer(makeSession({ role }))).not.toThrow();
   });
 
-  it("refuses a client scope with FORBIDDEN", () => {
+  it("refuses an anonymous caller with UNAUTHORIZED", () => {
     try {
-      assertInternalViewer(makeSession({ scope: "CLIENT_USER" }));
-      expect.unreachable("should have thrown");
-    } catch (error) {
-      expect((error as ApiError).code).toBe("FORBIDDEN");
-      expect((error as ApiError).status).toBe(403);
-    }
-  });
-
-  it("refuses a deactivated user with UNAUTHORIZED, not FORBIDDEN", () => {
-    try {
-      assertInternalViewer(makeSession({ isActive: false }));
+      assertActiveViewer(ANONYMOUS_SESSION);
       expect.unreachable("should have thrown");
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
@@ -73,33 +63,79 @@ describe("assertInternalViewer", () => {
     }
   });
 
-  it("never puts the user id in the client-facing message", () => {
+  it("refuses a deactivated user with UNAUTHORIZED", () => {
     try {
-      assertInternalViewer(makeSession({ isActive: false, id: "user-secret" }));
-      expect.unreachable("should have thrown");
-    } catch (error) {
-      expect((error as ApiError).message).not.toContain("user-secret");
-      expect((error as ApiError).logContext).toContain("user-secret");
-    }
-  });
-
-  it("refuses a deactivated internal user before considering scope", () => {
-    try {
-      assertInternalViewer(
-        makeSession({ scope: "SUPER_ADMIN", isActive: false }),
-      );
+      assertActiveViewer(makeSession({ isActive: false }));
       expect.unreachable("should have thrown");
     } catch (error) {
       expect((error as ApiError).code).toBe("UNAUTHORIZED");
     }
   });
 
-  it("does not treat a makingstuffs.co.uk address as internal on its own", () => {
+  it("refuses a deactivated ADMIN too — the role does not survive it", () => {
+    expect(() =>
+      assertActiveViewer(makeSession({ role: "ADMIN", isActive: false })),
+    ).toThrow(ApiError);
+  });
+
+  it("never puts the user id in the client-facing message", () => {
+    try {
+      assertActiveViewer(makeSession({ isActive: false, id: "user-secret" }));
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect((error as ApiError).message).not.toContain("user-secret");
+      expect((error as ApiError).logContext).toContain("user-secret");
+    }
+  });
+});
+
+describe("assertAdminViewer", () => {
+  it("allows a live ADMIN", () => {
+    expect(() =>
+      assertAdminViewer(makeSession({ role: "ADMIN" })),
+    ).not.toThrow();
+  });
+
+  it("refuses a MEMBER with FORBIDDEN", () => {
+    try {
+      assertAdminViewer(makeSession({ role: "MEMBER" }));
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).code).toBe("FORBIDDEN");
+      expect((error as ApiError).status).toBe(403);
+    }
+  });
+
+  it("refuses a deactivated ADMIN with UNAUTHORIZED, not FORBIDDEN", () => {
+    try {
+      assertAdminViewer(makeSession({ role: "ADMIN", isActive: false }));
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect((error as ApiError).code).toBe("UNAUTHORIZED");
+    }
+  });
+
+  it("refuses an anonymous caller", () => {
+    expect(() => assertAdminViewer(ANONYMOUS_SESSION)).toThrow(ApiError);
+  });
+
+  it("does not treat a makingstuffs.co.uk address as admin on its own", () => {
     const session = makeSession({
-      scope: "CLIENT_USER",
+      role: "MEMBER",
       email: "contractor@makingstuffs.co.uk",
     });
 
-    expect(() => assertInternalViewer(session)).toThrow(ApiError);
+    expect(() => assertAdminViewer(session)).toThrow(ApiError);
+  });
+
+  it("never puts the user id in the client-facing message", () => {
+    try {
+      assertAdminViewer(makeSession({ role: "MEMBER", id: "user-secret" }));
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect((error as ApiError).message).not.toContain("user-secret");
+      expect((error as ApiError).logContext).toContain("user-secret");
+    }
   });
 });

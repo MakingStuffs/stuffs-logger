@@ -1,7 +1,7 @@
-import { verifyApiToken } from "@journey-further/salient-auth/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { APP_SLUG } from "@/constants/environment";
+import { RETENTION_MIN_RUN_INTERVAL_MS } from "@/constants/retention";
+import { verifyApiToken } from "@/lib/auth/api-token";
 import { prisma } from "@/lib/db";
 
 import { GET } from "./route";
@@ -10,19 +10,20 @@ import { GET } from "./route";
  * The two refusals and the happy path.
  *
  * `verifyApiToken` is the boundary and is mocked; nothing re-implements its
- * decision here, which is the point of the route deferring to it. What is
+ * decision here, which is the point of the route deferring to it — the
+ * decision itself has its own tests in `lib/auth/api-token.test.ts`. What is
  * asserted is what the ROUTE does with each arm: two different statuses, the
  * standard envelope on both, no work done on either, and no hint about which
  * check failed.
  */
-vi.mock("@journey-further/salient-auth/server", { spy: true });
+vi.mock("@/lib/auth/api-token", () => ({ verifyApiToken: vi.fn() }));
 vi.mock("@/lib/db", () => ({
   prisma: {
     logEvent: { findMany: vi.fn(), deleteMany: vi.fn() },
   },
 }));
 
-function request(token = "jfk_live_token"): Request {
+function request(token = "slg_live_token"): Request {
   return new Request("https://logger.example.test/api/cron/retention", {
     headers: { authorization: `Bearer ${token}` },
   });
@@ -87,7 +88,7 @@ describe("GET /api/cron/retention", () => {
     expect(prisma.logEvent.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("binds the token check to this application", async () => {
+  it("hands the throttle to the verifier rather than enforcing it here", async () => {
     vi.mocked(verifyApiToken).mockResolvedValue({
       ok: false,
       reason: "invalid",
@@ -95,9 +96,14 @@ describe("GET /api/cron/retention", () => {
 
     await GET(request());
 
+    // The interval is claimed atomically inside `verifyApiToken`; a
+    // read-then-decide guard in this route could not serialise concurrent
+    // presentations.
     expect(verifyApiToken).toHaveBeenCalledWith(
-      "jfk_live_token",
-      expect.objectContaining({ applicationSlug: APP_SLUG }),
+      "slg_live_token",
+      expect.objectContaining({
+        minIntervalMs: RETENTION_MIN_RUN_INTERVAL_MS,
+      }),
     );
   });
 
@@ -115,8 +121,8 @@ describe("GET /api/cron/retention", () => {
   it("sweeps and reports in the standard envelope for a valid credential", async () => {
     vi.mocked(verifyApiToken).mockResolvedValue({
       ok: true,
-      token: { id: "token-1" },
-    } as never);
+      token: { tokenId: "token-1", name: "Retention cron" },
+    });
     vi.mocked(prisma.logEvent.findMany)
       .mockResolvedValueOnce([{ id: "event-1" }] as never)
       .mockResolvedValue([]);
@@ -134,8 +140,8 @@ describe("GET /api/cron/retention", () => {
   it("answers one fixed 500 when the sweep itself fails", async () => {
     vi.mocked(verifyApiToken).mockResolvedValue({
       ok: true,
-      token: { id: "token-1" },
-    } as never);
+      token: { tokenId: "token-1", name: "Retention cron" },
+    });
     vi.mocked(prisma.logEvent.findMany).mockRejectedValue(
       new Error("connection to database failed at 10.0.0.1:5432"),
     );

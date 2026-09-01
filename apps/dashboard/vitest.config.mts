@@ -17,9 +17,9 @@ export default defineConfig({
         // ESM resolver rejects. Inlining the package routes it through Vite's
         // resolver instead, the same way webpack handles it in the app build.
         //
-        // Scoped to salient-UI deliberately: salient-auth resolves fine on its
-        // own, and inlining it makes Vite read .js.map files whose `sources`
-        // the package does not publish, printing a screen of "points to
+        // Scoped to salient-ui deliberately: nothing else in the tree needs
+        // it, and widening the pattern makes Vite read .js.map files whose
+        // `sources` a package may not publish, printing a screen of "points to
         // missing source files" warnings on every run.
         inline: [/@journey-further\/salient-ui/],
       },

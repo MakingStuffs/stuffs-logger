@@ -1,5 +1,3 @@
-import { PORTAL_URL } from "@/constants/environment";
-
 /**
  * The Content Security Policy, shipped in REPORT-ONLY mode.
  *
@@ -28,6 +26,13 @@ import { PORTAL_URL } from "@/constants/environment";
  * `style-src` allows inline styles because Tailwind and salient-ui both emit
  * them; that is a known, documented weakening rather than an oversight, and it
  * does not undermine `script-src`.
+ *
+ * EVERY DIRECTIVE IS `'self'` NOW. The app hosts its own authentication, so
+ * there is no second origin to allow for session or sign-out calls. One thing
+ * to revisit at promotion time: an OAuth sign-in leaves via a server-issued
+ * redirect to the provider, and some browsers have historically applied
+ * `form-action` to redirect targets — worth confirming against real reports
+ * before this policy is switched from report-only to enforcing.
  */
 
 /** Bytes of randomness in a nonce. 128 bits, per the CSP guidance. */
@@ -52,18 +57,11 @@ export function createCspNonce(): string {
  * Builds the policy string for one response.
  *
  * @param nonce - The nonce this response's scripts will carry.
- * @param portalUrl - The portal origin, allowed as a connect/form target for
- *   the shared sign-out and session calls. Defaults to the configured one.
  * @returns The policy, ready to use as a header value.
  * @example
  * buildContentSecurityPolicy("abc123"); // "default-src 'self'; ..."
  */
-export function buildContentSecurityPolicy(
-  nonce: string,
-  portalUrl: string | undefined = PORTAL_URL,
-): string {
-  const portal = portalUrl ?? "";
-
+export function buildContentSecurityPolicy(nonce: string): string {
   const directives: Record<string, readonly string[]> = {
     "default-src": ["'self'"],
     // 'strict-dynamic' lets the nonced bootstrap load the chunks it needs
@@ -73,8 +71,8 @@ export function buildContentSecurityPolicy(
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:", "blob:", "https:"],
     "font-src": ["'self'", "data:"],
-    "connect-src": ["'self'", ...(portal ? [portal] : [])],
-    "form-action": ["'self'", ...(portal ? [portal] : [])],
+    "connect-src": ["'self'"],
+    "form-action": ["'self'"],
     "frame-ancestors": ["'none'"],
     "frame-src": ["'none'"],
     "object-src": ["'none'"],

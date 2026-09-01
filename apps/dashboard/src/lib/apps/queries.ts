@@ -1,22 +1,23 @@
 import type { Prisma } from "@prisma/client";
-import type { SalientSession } from "@journey-further/salient-auth/server";
 import { z } from "zod";
 
-import { assertInternalViewer } from "@/lib/access";
+import { assertActiveViewer, assertAdminViewer } from "@/lib/access";
+import type { AppSession } from "@/lib/auth/types";
 import { prisma } from "@/lib/db";
 import type { ApplicationSummary, IngestKeySummary } from "@/lib/logs/dto";
 
 /**
  * Application and ingest-key reads.
  *
- * Same rules as `lib/logs/queries.ts`: every read is gated on
- * `assertInternalViewer`, the session is passed in, the query shape is a
- * constant, and rows are projected before they are returned.
+ * Same rules as `lib/logs/queries.ts`: every read is gated, the session is
+ * passed in, the query shape is a constant, and rows are projected before they
+ * are returned.
  *
- * The application list is not public information inside the product — it names
- * every client whose app reports to stuffs-logger — so it carries the same gate as
- * the logs themselves. Per-application entitlement for client-scoped users is
- * a deliberate future extension; see the note in `lib/logs/queries.ts`.
+ * TWO DIFFERENT GATES, deliberately. Reading which applications exist is the
+ * same class of thing as reading their logs, so it takes `assertActiveViewer`.
+ * Listing INGEST KEYS is not: a key is a live write credential for the public
+ * ingest endpoint, so it takes `assertAdminViewer` — the same gate as the
+ * actions that mint and revoke them.
  */
 
 /** Columns an application listing exposes. */
@@ -96,9 +97,9 @@ function toIngestKeySummary(row: IngestKeyRow): IngestKeySummary {
  * @returns Applications ordered by name.
  */
 export async function listApplications(
-  session: SalientSession,
+  session: AppSession,
 ): Promise<ApplicationSummary[]> {
-  assertInternalViewer(session);
+  assertActiveViewer(session);
 
   const rows = await prisma.application.findMany({
     select: APPLICATION_SELECT,
@@ -117,10 +118,10 @@ export async function listApplications(
  *   the two are indistinguishable to the caller on purpose.
  */
 export async function getApplicationBySlug(
-  session: SalientSession,
+  session: AppSession,
   slug: string,
 ): Promise<ApplicationSummary | null> {
-  assertInternalViewer(session);
+  assertActiveViewer(session);
 
   const parsed = applicationSlugSchema.safeParse(slug);
   if (!parsed.success) return null;
@@ -136,19 +137,19 @@ export async function getApplicationBySlug(
 /**
  * The ingest keys belonging to an application.
  *
- * INTERNAL ONLY. Ingest keys are write credentials, so listing them is gated
- * more tightly than reading logs.
+ * ADMIN ONLY. Ingest keys are write credentials, so listing them is gated more
+ * tightly than reading logs.
  *
  * @param session - The resolved session of the user asking.
  * @param applicationId - The application whose keys to list.
  * @returns Keys ordered newest first, never including a secret hash.
- * @throws {ApiError} `FORBIDDEN` when the caller is not internal.
+ * @throws {ApiError} `FORBIDDEN` when the caller is not an administrator.
  */
 export async function listIngestKeys(
-  session: SalientSession,
+  session: AppSession,
   applicationId: string,
 ): Promise<IngestKeySummary[]> {
-  assertInternalViewer(session);
+  assertAdminViewer(session);
 
   const rows = await prisma.ingestKey.findMany({
     where: { applicationId },

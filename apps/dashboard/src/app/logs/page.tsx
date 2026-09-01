@@ -1,5 +1,3 @@
-import { getSessionOrRedirect } from "@journey-further/salient-auth/server";
-import type { SalientSession } from "@journey-further/salient-auth/server";
 import { AppHeader } from "@journey-further/salient-ui/components/app-header";
 import { Button } from "@journey-further/salient-ui/ui/button";
 import { PageContentWrapper } from "@journey-further/salient-ui/ui/page-content-wrapper";
@@ -26,8 +24,9 @@ import {
   resolveAccess,
 } from "@/components/ui-states/access-refused";
 import { EmptyState } from "@/components/ui-states/empty-state";
-import { APP_SLUG } from "@/constants/environment";
 import { listApplications } from "@/lib/apps/queries";
+import { getSessionOrRedirect } from "@/lib/auth/session";
+import type { AppSession } from "@/lib/auth/types";
 import type { LogFilters, RawSearchParams } from "@/lib/logs/filters";
 import { parseLogFilters } from "@/lib/logs/filters";
 import { listEnvironments, listLogEvents } from "@/lib/logs/queries";
@@ -55,7 +54,7 @@ export default async function LogsPage({
   // otherwise be reported as an invalid filter.
   const parsed = parseLogFilters(normaliseSearchParams(await searchParams));
 
-  const session = await getSessionOrRedirect(APP_SLUG, {
+  const session = await getSessionOrRedirect({
     returnPath: parsed.ok ? buildLogsHref(parsed.filters) : LOGS_PATH,
   });
 
@@ -155,7 +154,7 @@ async function LogResults({
   session,
   filters,
 }: {
-  session: SalientSession;
+  session: AppSession;
   filters: LogFilters;
 }) {
   const page = await listLogEvents(session, filters);

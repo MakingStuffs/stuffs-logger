@@ -1,4 +1,3 @@
-import { signOut } from "@journey-further/salient-auth/server";
 import { Footer } from "@journey-further/salient-ui/components/footer";
 import { AppSidebar } from "@journey-further/salient-ui/components/sidebar-nav";
 import type { BasicLink } from "@journey-further/salient-ui/components/sidebar-nav/types";
@@ -6,9 +5,10 @@ import { SidebarProvider } from "@journey-further/salient-ui/ui/sidebar";
 
 import pkg from "../../package.json";
 
-import { APP_DISPLAY_NAME, PORTAL_URL } from "@/constants/environment";
+import { APP_DISPLAY_NAME } from "@/constants/environment";
+import { signOut } from "@/lib/auth/session";
 
-/** Structurally compatible with the salient-auth session user. */
+/** Structurally compatible with the resolved session user. */
 export interface ShellUser {
   name?: string | null;
   email?: string | null;
@@ -28,16 +28,7 @@ const LINKS: BasicLink[] = [
 ];
 
 /**
- * The portal link is supplied explicitly in salient-ui v7. Absent a portal
- * origin (standalone or preview), the sidebar logo already links to `/`, so
- * the entry is simply omitted.
- */
-const GATEWAY_LINK: BasicLink | undefined = PORTAL_URL
-  ? { label: "Salient", href: PORTAL_URL, icon: "LogoPrimary" }
-  : undefined;
-
-/**
- * The Salient app chrome: sidebar, page content and the shared footer.
+ * The app chrome: sidebar, page content and the shared footer.
  *
  * Pages render their own AppHeader inside `children`, per the page-structure
  * spec. This component holds no auth logic — the page that renders it has
@@ -60,7 +51,7 @@ export function AppShell({ children, user }: AppShellProps) {
 
   return (
     <SidebarProvider>
-      <AppSidebar links={LINKS} gatewayLink={GATEWAY_LINK} user={sidebarUser} />
+      <AppSidebar links={LINKS} user={sidebarUser} />
       <div className="flex min-h-svh w-full flex-col">
         {/* The base layer gives main a min-height of its own; flex-1 lets it
             share the column with the footer instead of overflowing past it. */}

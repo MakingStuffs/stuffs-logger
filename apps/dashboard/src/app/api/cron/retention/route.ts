@@ -1,14 +1,14 @@
-import { verifyApiToken } from "@journey-further/salient-auth/server";
 import type { NextResponse } from "next/server";
 
-import { APP_SLUG } from "@/constants/environment";
 import { ApiError } from "@/lib/api/errors";
 import { apiSuccess } from "@/lib/api/responses";
 import { withErrorHandler } from "@/lib/api/with-error-handler";
+import { verifyApiToken } from "@/lib/auth/api-token";
 import {
   RETENTION_DAYS,
   RETENTION_DELETE_BATCH_SIZE,
   RETENTION_MAX_BATCHES,
+  RETENTION_MIN_RUN_INTERVAL_MS,
   RETENTION_WINDOW_MS,
 } from "@/constants/retention";
 import { prisma } from "@/lib/db";
@@ -17,15 +17,14 @@ import { prisma } from "@/lib/db";
  * `GET /api/cron/retention` — deletes events past the retention window.
  *
  * AUTH TIER: MACHINE ONLY. There is no session here. The caller presents an
- * application API token as `Authorization: Bearer <token>` and
- * `verifyApiToken` decides — atomically — whether it is a live credential
- * bound to THIS application. Nothing about the credential is re-checked
- * afterwards: the package enforces the binding and the throttle inside one
- * claim, and a second, weaker implementation here could only disagree with it.
+ * API token as `Authorization: Bearer <token>` and `verifyApiToken` decides —
+ * atomically — whether it is a live credential. Nothing about it is re-checked
+ * afterwards: the throttle is claimed inside that same call, and a second,
+ * weaker implementation here could only disagree with it.
  *
  * Scheduled from vercel.json at 03:00 UTC daily. Vercel Cron sends the
  * deployment's `CRON_SECRET` as the bearer token, so that variable must hold a
- * raw token minted for this app's catalog entry.
+ * raw token whose digest is a live row in `api_tokens`.
  *
  * It answers in the same envelope as every other endpoint here — thrown
  * {@link ApiError}s through {@link withErrorHandler} — including on refusal. A
@@ -42,15 +41,6 @@ export const dynamic = "force-dynamic";
 
 /** Seconds this handler may run for, bounded by the Vercel Pro ceiling. */
 export const maxDuration = 300;
-
-/**
- * Minimum gap between two accepted runs.
- *
- * Retention is a daily job. An hour still lets an operator re-run it by hand
- * after a failure without waiting for tomorrow, while making a leaked token
- * useless as a way to hammer the database with delete sweeps.
- */
-const MIN_INTERVAL_MS = 60 * 60 * 1000;
 
 const BEARER_SCHEME = "bearer";
 
@@ -105,8 +95,7 @@ async function deleteExpiredEvents(
 
 const handleGet = async (request: Request): Promise<NextResponse> => {
   const verification = await verifyApiToken(bearerToken(request), {
-    applicationSlug: APP_SLUG,
-    minIntervalMs: MIN_INTERVAL_MS,
+    minIntervalMs: RETENTION_MIN_RUN_INTERVAL_MS,
   });
 
   if (!verification.ok) {
@@ -116,12 +105,14 @@ const handleGet = async (request: Request): Promise<NextResponse> => {
       throw new ApiError(
         "RATE_LIMITED",
         "This job has already run too recently.",
-        { logContext: `retention token presented inside ${MIN_INTERVAL_MS}ms` },
+        {
+          logContext: `retention token presented inside ${RETENTION_MIN_RUN_INTERVAL_MS}ms`,
+        },
       );
     }
 
     throw new ApiError("UNAUTHORIZED", "Invalid credentials.", {
-      logContext: "retention token unknown, wrong app, revoked or expired",
+      logContext: "retention token unknown, malformed or revoked",
     });
   }
 

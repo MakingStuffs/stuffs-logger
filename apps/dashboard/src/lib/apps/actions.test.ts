@@ -1,22 +1,23 @@
 import { PUBLIC_KEY_PREFIX, SECRET_KEY_PREFIX } from "@stuffs-logger/core";
-import {
-  getSession,
-  type SalientSession,
-  type SessionAccessResult,
-} from "@journey-further/salient-auth/server";
 import { revalidatePath } from "next/cache";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { getSession } from "@/lib/auth/session";
+import type { AppSession, AppUser } from "@/lib/auth/types";
 import { prisma } from "@/lib/db";
 
 import { createIngestKeyAction, revokeIngestKeyAction } from "./actions";
 
 /**
- * Boundary mocks only: the session getter and the database client. Everything
- * in between — the scope check, the schema, the key generation — runs for real,
+ * Boundary mocks only: the session seam and the database client. Everything in
+ * between — the role check, the schema, the key generation — runs for real,
  * because those are the things these tests exist to hold.
+ *
+ * The session seam is replaced by a FACTORY rather than spied on, so the real
+ * module — and with it Better Auth, the Prisma adapter and `next/headers` —
+ * never loads. A unit test of an action should not need an auth instance.
  */
-vi.mock("@journey-further/salient-auth/server", { spy: true });
+vi.mock("@/lib/auth/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -25,22 +26,17 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-function makeSession(
-  overrides: Partial<SalientSession["user"]> = {},
-): SalientSession {
+function makeSession(overrides: Partial<AppUser> = {}): AppSession {
   return {
     user: {
       id: "user-1",
       email: "someone@makingstuffs.co.uk",
       name: "Someone",
-      scope: "INTERNAL_USER",
+      role: "ADMIN",
+      image: null,
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
-      clients: [],
-      accounts: [],
-      apps: [],
-      appConfigData: null,
       ...overrides,
     },
     session: {
@@ -50,12 +46,32 @@ function makeSession(
       expiresAt: new Date(Date.now() + 3_600_000),
       createdAt: new Date(),
       updatedAt: new Date(),
+      ipAddress: null,
+      userAgent: null,
     },
   };
 }
 
-function signedInAs(session: SalientSession): void {
+function signedInAs(session: AppSession): void {
   vi.mocked(getSession).mockResolvedValue({ hasAccess: true, session });
+}
+
+/** Nobody at all: the fail-closed arm, which carries no session. */
+function signedOut(): void {
+  vi.mocked(getSession).mockResolvedValue({
+    hasAccess: false,
+    reason: "UNAUTHENTICATED",
+    session: null,
+  });
+}
+
+/** Signed in, but the account has been switched off. */
+function signedInButDeactivated(): void {
+  vi.mocked(getSession).mockResolvedValue({
+    hasAccess: false,
+    reason: "INACTIVE",
+    session: makeSession({ isActive: false }),
+  });
 }
 
 function formOf(entries: Record<string, string>): FormData {
@@ -90,7 +106,7 @@ beforeEach(() => {
 
 describe("createIngestKeyAction — access", () => {
   it("refuses an anonymous caller", async () => {
-    vi.mocked(getSession).mockResolvedValue(null);
+    signedOut();
 
     const result = await createIngestKeyAction(
       { status: "idle" },
@@ -104,13 +120,23 @@ describe("createIngestKeyAction — access", () => {
     expect(prisma.ingestKey.create).not.toHaveBeenCalled();
   });
 
-  it("refuses a caller who is signed in but has no access to this app", async () => {
-    const denied: SessionAccessResult = {
-      hasAccess: false,
-      accessReason: "NO_APP_ACCESS",
-      session: makeSession(),
-    };
-    vi.mocked(getSession).mockResolvedValue(denied);
+  it("refuses a caller whose account has been deactivated", async () => {
+    signedInButDeactivated();
+
+    const result = await createIngestKeyAction(
+      { status: "idle" },
+      formOf(VALID_CREATE),
+    );
+
+    expect(result).toEqual({
+      status: "error",
+      message: "Your account is no longer active.",
+    });
+    expect(prisma.ingestKey.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a MEMBER, who may read logs but not mint credentials", async () => {
+    signedInAs(makeSession({ role: "MEMBER" }));
 
     const result = await createIngestKeyAction(
       { status: "idle" },
@@ -121,8 +147,8 @@ describe("createIngestKeyAction — access", () => {
     expect(prisma.ingestKey.create).not.toHaveBeenCalled();
   });
 
-  it("refuses a client-scoped user, who may read logs but not mint credentials", async () => {
-    signedInAs(makeSession({ scope: "CLIENT_USER" }));
+  it("refuses a deactivated ADMIN", async () => {
+    signedInAs(makeSession({ role: "ADMIN", isActive: false }));
 
     const result = await createIngestKeyAction(
       { status: "idle" },
@@ -133,16 +159,18 @@ describe("createIngestKeyAction — access", () => {
     expect(prisma.ingestKey.create).not.toHaveBeenCalled();
   });
 
-  it("refuses a deactivated internal user", async () => {
-    signedInAs(makeSession({ isActive: false }));
+  it("never reaches validation when the caller is refused", async () => {
+    signedInAs(makeSession({ role: "MEMBER" }));
 
     const result = await createIngestKeyAction(
       { status: "idle" },
-      formOf(VALID_CREATE),
+      formOf({ ...VALID_CREATE, name: "" }),
     );
 
-    expect(result.status).toBe("error");
-    expect(prisma.ingestKey.create).not.toHaveBeenCalled();
+    // A field error here would mean the schema ran before the gate did.
+    expect(
+      result.status === "error" ? result.fieldErrors : undefined,
+    ).toBeUndefined();
   });
 });
 
@@ -335,8 +363,8 @@ describe("revokeIngestKeyAction", () => {
     } as never);
   });
 
-  it("refuses a client-scoped user", async () => {
-    signedInAs(makeSession({ scope: "CLIENT_USER" }));
+  it("refuses a MEMBER", async () => {
+    signedInAs(makeSession({ role: "MEMBER" }));
 
     const result = await revokeIngestKeyAction(
       { status: "idle" },
@@ -348,7 +376,19 @@ describe("revokeIngestKeyAction", () => {
   });
 
   it("refuses an anonymous caller", async () => {
-    vi.mocked(getSession).mockResolvedValue(null);
+    signedOut();
+
+    const result = await revokeIngestKeyAction(
+      { status: "idle" },
+      formOf({ keyId: "key-1", confirmName: LIVE_KEY.name }),
+    );
+
+    expect(result.status).toBe("error");
+    expect(prisma.ingestKey.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a deactivated caller", async () => {
+    signedInButDeactivated();
 
     const result = await revokeIngestKeyAction(
       { status: "idle" },

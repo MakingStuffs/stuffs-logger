@@ -1,11 +1,10 @@
 "use server";
 
-import { getSession } from "@journey-further/salient-auth/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { APP_SLUG } from "@/constants/environment";
-import { assertInternalViewer } from "@/lib/access";
+import { assertAdminViewer } from "@/lib/access";
+import { getSession } from "@/lib/auth/session";
 import { isApiError } from "@/lib/api/errors";
 import { prisma } from "@/lib/db";
 import { generateIngestKey } from "@/lib/ingest/keys";
@@ -16,7 +15,7 @@ import type { IngestKeyType } from "@/lib/ingest/keys";
  *
  * A Server Action is a public HTTP endpoint: the fact that only one dialog in
  * this app calls it is a UI detail, not a control. Every action below
- * therefore re-derives the session from the request, re-checks internal scope,
+ * therefore re-derives the session from the request, re-checks the ADMIN role,
  * and re-validates its input — nothing is trusted because the form that
  * normally submits it happens to be rendered behind a gate.
  *
@@ -90,38 +89,35 @@ const revokeIngestKeySchema = z.object({
 });
 
 /** Whether the caller may manage keys, or the refusal to return to the form. */
-type InternalCaller =
-  { ok: true } | { ok: false; result: IngestKeyActionResult };
+type AdminCaller = { ok: true } | { ok: false; result: IngestKeyActionResult };
 
 /**
  * Resolves the caller and checks they may manage keys.
  *
  * Done inside every action rather than once at the page: the page gate
  * protects the page, and this endpoint is reachable without it.
+ *
+ * The refusal is narrowed on `hasAccess`, never on the truthiness of the
+ * result — the refused arm is an object and would pass a truthiness test.
  */
-async function requireInternalCaller(): Promise<InternalCaller> {
-  const access = await getSession(APP_SLUG);
+async function requireAdminCaller(): Promise<AdminCaller> {
+  const access = await getSession();
 
-  // The denied arm is TRUTHY, so this narrows on `hasAccess` rather than
-  // testing the result itself.
-  if (!access) {
-    return {
-      ok: false,
-      result: { status: "error", message: "You need to sign in again." },
-    };
-  }
   if (!access.hasAccess) {
     return {
       ok: false,
       result: {
         status: "error",
-        message: "You do not have access to this app.",
+        message:
+          access.reason === "INACTIVE"
+            ? "Your account is no longer active."
+            : "You need to sign in again.",
       },
     };
   }
 
   try {
-    assertInternalViewer(access.session);
+    assertAdminViewer(access.session);
   } catch (error) {
     if (isApiError(error)) {
       return { ok: false, result: { status: "error", message: error.message } };
@@ -216,7 +212,7 @@ export async function createIngestKeyAction(
   _previous: IngestKeyActionResult,
   formData: FormData,
 ): Promise<IngestKeyActionResult> {
-  const caller = await requireInternalCaller();
+  const caller = await requireAdminCaller();
   if (!caller.ok) return caller.result;
 
   const parsed = createIngestKeySchema.safeParse(
@@ -287,7 +283,7 @@ export async function revokeIngestKeyAction(
   _previous: IngestKeyActionResult,
   formData: FormData,
 ): Promise<IngestKeyActionResult> {
-  const caller = await requireInternalCaller();
+  const caller = await requireAdminCaller();
   if (!caller.ok) return caller.result;
 
   const parsed = revokeIngestKeySchema.safeParse(

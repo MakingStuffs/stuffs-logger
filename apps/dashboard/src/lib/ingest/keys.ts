@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import {
   parseIngestKey,
@@ -6,6 +6,8 @@ import {
   SECRET_KEY_PREFIX,
   type LogSource,
 } from "@stuffs-logger/core";
+
+import { digestsMatch, sha256Hex } from "@/lib/crypto/digest";
 
 /**
  * Ingest key verification — the authentication boundary of the public ingest
@@ -75,44 +77,26 @@ export type IngestKeyVerification =
 const DENY_INVALID = { ok: false, reason: "invalid_key" } as const;
 const DENY_ORIGIN = { ok: false, reason: "origin_not_allowed" } as const;
 
-/** Length of a SHA-256 digest in hex characters. */
-const SHA256_HEX_LENGTH = 64;
-
 /**
  * A digest to compare against when no row was found, so the "unknown handle"
  * path costs the same as the "wrong secret" path and the two cannot be told
  * apart by timing.
  */
-const DUMMY_DIGEST = createHash("sha256")
-  .update("stuffs-logger-absent-key")
-  .digest("hex");
+const DUMMY_DIGEST = sha256Hex("stuffs-logger-absent-key");
 
 /**
  * The SHA-256 hex digest of a key's secret segment.
  *
- * The only representation of a secret key that is ever persisted. Plain
- * SHA-256 rather than a password KDF on purpose: the input is 256 bits of
- * server-generated randomness, not a human-chosen password, so there is no
- * search space for a slow hash to protect.
+ * The only representation of a secret key that is ever persisted. The hash and
+ * the constant-time comparison both come from `lib/crypto/digest.ts`, which
+ * documents why a plain digest is right here and is the one source of truth
+ * shared with the machine API tokens.
  *
  * @param secret - The `<secret>` segment of a `slg_sec_…` key.
  * @returns The lowercase hex digest.
  */
 export function hashIngestSecret(secret: string): string {
-  return createHash("sha256").update(secret, "utf8").digest("hex");
-}
-
-/** Constant-time comparison of two hex digests, false for anything malformed. */
-function digestsMatch(presentedHex: string, storedHex: string | null): boolean {
-  if (storedHex === null || storedHex.length !== SHA256_HEX_LENGTH)
-    return false;
-  if (!/^[0-9a-f]+$/.test(storedHex)) return false;
-
-  const presented = Buffer.from(presentedHex, "hex");
-  const stored = Buffer.from(storedHex, "hex");
-  if (presented.length !== stored.length) return false;
-
-  return timingSafeEqual(presented, stored);
+  return sha256Hex(secret);
 }
 
 /**

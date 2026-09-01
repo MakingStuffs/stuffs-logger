@@ -21,3 +21,13 @@ export const RETENTION_DELETE_BATCH_SIZE = 5000;
 
 /** Ceiling on batches per invocation, so the handler always finishes in time. */
 export const RETENTION_MAX_BATCHES = 40;
+
+/**
+ * Minimum gap between two accepted retention runs.
+ *
+ * Retention is a daily job. An hour still lets an operator re-run it by hand
+ * after a failure without waiting for tomorrow, while making a leaked cron
+ * token useless as a way to hammer the database with delete sweeps. Claimed
+ * atomically inside `verifyApiToken`, never by the route.
+ */
+export const RETENTION_MIN_RUN_INTERVAL_MS = 60 * 60 * 1000;
