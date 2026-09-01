@@ -5,7 +5,7 @@ import { SDK_VERSION } from "./defaults";
 import type { Logger, LoggerOptions, LogContext } from "./types";
 
 /**
- * The `window.JFLogger` build, for pages with no build step at all.
+ * The `window.StuffsLogger` build, for pages with no build step at all.
  *
  * Two lines of HTML have to be enough here, so this entry point does what the
  * module entry points deliberately do not: it captures the console and the
@@ -31,7 +31,7 @@ let current: Logger | undefined;
  * @param options - Logger configuration and capture switches.
  * @returns The global logger.
  * @example
- * JFLogger.init({ apiKey: "jfl_pub_…" });
+ * StuffsLogger.init({ apiKey: "slg_pub_…" });
  */
 export function init(options: InitOptions): Logger {
   if (current) return current;
@@ -119,5 +119,5 @@ try {
   if (inline) init(inline);
 } catch {
   // Auto-configuration is a convenience. A host that cannot support it must
-  // still finish loading the script so `JFLogger.init()` remains callable.
+  // still finish loading the script so `StuffsLogger.init()` remains callable.
 }

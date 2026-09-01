@@ -5,7 +5,7 @@ import {
   PUBLIC_KEY_PREFIX,
   SECRET_KEY_PREFIX,
   type LogSource,
-} from "@jf-logger/core";
+} from "@stuffs-logger/core";
 
 /**
  * Ingest key verification — the authentication boundary of the public ingest
@@ -84,7 +84,7 @@ const SHA256_HEX_LENGTH = 64;
  * apart by timing.
  */
 const DUMMY_DIGEST = createHash("sha256")
-  .update("jf-logger-absent-key")
+  .update("stuffs-logger-absent-key")
   .digest("hex");
 
 /**
@@ -95,7 +95,7 @@ const DUMMY_DIGEST = createHash("sha256")
  * server-generated randomness, not a human-chosen password, so there is no
  * search space for a slow hash to protect.
  *
- * @param secret - The `<secret>` segment of a `jfl_sec_…` key.
+ * @param secret - The `<secret>` segment of a `slg_sec_…` key.
  * @returns The lowercase hex digest.
  */
 export function hashIngestSecret(secret: string): string {
@@ -139,7 +139,7 @@ export function isOriginAllowed(
 /**
  * Verifies a presented ingest key against the store.
  *
- * @param presented - The raw `x-jf-key` header value, untrusted.
+ * @param presented - The raw `x-slg-key` header value, untrusted.
  * @param options - The request `Origin` (required for public keys) and the
  *   store to look the key up in.
  * @returns The verified identity, or a flat denial reason.

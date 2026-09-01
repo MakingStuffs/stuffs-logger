@@ -64,14 +64,14 @@ describe("withErrorHandler", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const handler = withErrorHandler({ context: "test" }, async () => {
       throw new ApiError("UNAUTHORIZED", "Invalid ingest key.", {
-        logContext: "key jfl_pub_secretvalue was revoked at 2026-01-01",
+        logContext: "key slg_pub_secretvalue was revoked at 2026-01-01",
       });
     });
 
     const response = await handler(makeRequest());
     const raw = await response.text();
 
-    expect(raw).not.toContain("jfl_pub_secretvalue");
+    expect(raw).not.toContain("slg_pub_secretvalue");
     expect(raw).not.toContain("logContext");
     expect(warn).toHaveBeenCalled();
   });

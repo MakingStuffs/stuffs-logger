@@ -23,7 +23,7 @@
     // the option the bundler adds on our behalf.
     "ignoreDeprecations": "6.0",
     "paths": {
-      "@jf-logger/core/*": ["./../logger-core/src/*"]
+      "@stuffs-logger/core/*": ["./../logger-core/src/*"]
     }
   },
   "include": ["src/**/*.ts"],

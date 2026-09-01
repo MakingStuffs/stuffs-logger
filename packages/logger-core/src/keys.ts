@@ -60,12 +60,12 @@ function isValidSegment(value: string): boolean {
 /**
  * Parses a presented ingest key.
  *
- * @param raw - The raw `x-jf-key` header value, untrusted.
+ * @param raw - The raw `x-slg-key` header value, untrusted.
  * @returns The parsed key, or `null` when the value is not a well-formed key
  *   of either type. A malformed key is indistinguishable from an unknown one
  *   to the caller by design — both answer 401.
  * @example
- * parseIngestKey("jfl_sec_abc12345_s3cr3t…"); // { kind: "secret", keyId, secret }
+ * parseIngestKey("slg_sec_abc12345_s3cr3t…"); // { kind: "secret", keyId, secret }
  */
 export function parseIngestKey(raw: string): ParsedIngestKey | null {
   if (typeof raw !== "string") return null;

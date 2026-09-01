@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { build } from "tsup";
 
 /**
- * Builds the `window.JFLogger` IIFE and reports the real gzipped size of every
+ * Builds the `window.StuffsLogger` IIFE and reports the real gzipped size of every
  * browser-facing artefact.
  *
  * tsup cannot emit an IIFE alongside ESM/CJS in one config — the IIFE needs its
@@ -19,13 +19,13 @@ import { build } from "tsup";
  * Three numbers, because they answer different questions:
  *
  * - `global`       what a raw HTML page downloads, captures included.
- * - `browser`      what a bundler pulls in from `@jf-logger/sdk/browser` if the
+ * - `browser`      what a bundler pulls in from `@stuffs-logger/sdk/browser` if the
  *                  application uses the whole surface.
  * - `browserCore`  what an application that only calls `createLogger` pays,
  *                  once its bundler has tree-shaken the captures away.
  */
 
-const GLOBAL_OUTPUT = "dist/jf-logger.global.js";
+const GLOBAL_OUTPUT = "dist/stuffs-logger.global.js";
 
 /** Shared with the IIFE build so every measurement uses the same settings. */
 const browserBuildOptions = {
@@ -36,7 +36,7 @@ const browserBuildOptions = {
   dts: false,
   clean: false,
   treeshake: true,
-  noExternal: ["@jf-logger/core"],
+  noExternal: ["@stuffs-logger/core"],
   tsconfig: "./tsconfig.json",
   silent: true,
   outExtension: () => ({ js: ".js" }),
@@ -49,12 +49,12 @@ function gzippedSize(path) {
 
 await build({
   ...browserBuildOptions,
-  entry: { "jf-logger.global": "src/global.ts" },
-  globalName: "JFLogger",
+  entry: { "stuffs-logger.global": "src/global.ts" },
+  globalName: "StuffsLogger",
   sourcemap: true,
 });
 
-const scratch = mkdtempSync(join(tmpdir(), "jf-logger-size-"));
+const scratch = mkdtempSync(join(tmpdir(), "stuffs-logger-size-"));
 
 // The probe has to sit inside the package so its relative import resolves and
 // so it picks up the same tsconfig path mapping the real build uses.
@@ -70,7 +70,7 @@ try {
   await build({
     ...browserBuildOptions,
     entry: { browser: "src/browser/index.ts", "core-only": PROBE_ENTRY },
-    globalName: "JFLoggerSizeProbe",
+    globalName: "StuffsLoggerSizeProbe",
     outDir: scratch,
   });
 

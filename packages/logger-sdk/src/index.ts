@@ -5,7 +5,7 @@ import { createLoggerWith } from "./logger/create-logger";
 import type { Logger, LoggerOptions } from "./types";
 
 /**
- * `@jf-logger/sdk` — the isomorphic entry point.
+ * `@stuffs-logger/sdk` — the isomorphic entry point.
  *
  * Picks its runtime adapter when the logger is created, so the same import
  * works in a Next.js server component, a route handler and a client
@@ -18,11 +18,11 @@ import type { Logger, LoggerOptions } from "./types";
  * Creates a logger for whichever runtime is executing.
  *
  * @param options - Configuration. Everything except the ingest key has a
- *   default, and the key itself falls back to `JF_LOGGER_API_KEY` under Node.
+ *   default, and the key itself falls back to `STUFFS_LOGGER_API_KEY` under Node.
  * @returns A logger. Misconfiguration produces an inert logger reported
  *   through `onError`, never a thrown error.
  * @example
- * const logger = createLogger({ apiKey: "jfl_pub_…" });
+ * const logger = createLogger({ apiKey: "slg_pub_…" });
  * logger.info("checkout started", { basketId });
  */
 export function createLogger(options: LoggerOptions = {}): Logger {

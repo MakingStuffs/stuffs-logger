@@ -1,10 +1,10 @@
-import { DEVICE_TYPES, LOG_LEVELS, LOG_SOURCES } from "@jf-logger/core";
+import { DEVICE_TYPES, LOG_LEVELS, LOG_SOURCES } from "@stuffs-logger/core";
 import type {
   DeviceType,
   LoggerKind,
   LogLevel,
   LogSource,
-} from "@jf-logger/core";
+} from "@stuffs-logger/core";
 import type { BadgeProps } from "@journey-further/salient-ui/ui/badge";
 
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/logs/filters";

@@ -64,7 +64,7 @@ describe("resolveEndpoint", () => {
 
   it("reads the environment when nothing is configured", () => {
     vi.stubGlobal("process", {
-      env: { JF_LOGGER_ENDPOINT: "https://env.example.com" },
+      env: { STUFFS_LOGGER_ENDPOINT: "https://env.example.com" },
     });
 
     expect(resolveEndpoint(undefined)).toBe(

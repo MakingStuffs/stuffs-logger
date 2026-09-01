@@ -1,6 +1,6 @@
-# `@jf-logger/sdk`
+# `@stuffs-logger/sdk`
 
-The jf-logger client. One call sets it up, it runs the same way in Node, React,
+The stuffs-logger client. One call sets it up, it runs the same way in Node, React,
 Next.js and a plain `<script>` tag, and it will not throw into your code no
 matter what goes wrong.
 
@@ -11,10 +11,10 @@ matter what goes wrong.
 - **Bounded.** A fixed-length queue, drop-oldest on overflow, capped retry
   backoff. An offline tab never grows.
 - **Safe.** Secret-shaped context keys and url parameters are redacted before
-  an event is queued, a `jfl_sec_` key is refused outright in the browser, a
+  an event is queued, a `slg_sec_` key is refused outright in the browser, a
   cleartext `http:` endpoint is refused off `localhost`, and no cookies are
   ever sent to the ingest endpoint.
-- **Small.** No runtime dependencies. Measured with `pnpm --filter @jf-logger/sdk size`:
+- **Small.** No runtime dependencies. Measured with `pnpm --filter @stuffs-logger/sdk size`:
   6.22 KB gzipped for `createLogger` alone, 7.00 KB for the whole browser entry
   point, 7.20 KB for the drop-in `<script>` build.
 
@@ -23,15 +23,15 @@ matter what goes wrong.
 ## Install
 
 ```sh
-pnpm add @jf-logger/sdk
+pnpm add @stuffs-logger/sdk
 ```
 
 ## Keys
 
 | Key         | Where it may be used | Why                                                                 |
 | ----------- | -------------------- | ------------------------------------------------------------------- |
-| `jfl_pub_…` | Browsers only        | Origin-checked at ingest, so it is meant to live in page source     |
-| `jfl_sec_…` | Servers only         | Grants ingest without an origin check — never ship one to a browser |
+| `slg_pub_…` | Browsers only        | Origin-checked at ingest, so it is meant to live in page source     |
+| `slg_sec_…` | Servers only         | Grants ingest without an origin check — never ship one to a browser |
 
 The SDK enforces this itself: a secret key configured in the browser, or a
 public key configured in Node, produces an inert logger and an `onError`
@@ -59,7 +59,7 @@ That is an accepted trade for "drop a script tag on a static site", and it is
 the same trade every browser telemetry SDK makes. If it is not one you want to
 make for a particular application, do not put a key in the page at all: proxy
 ingest through your own server, authenticate the caller however you already
-authenticate them, and hold a `jfl_sec_` key there.
+authenticate them, and hold a `slg_sec_` key there.
 
 **There is no `app` option, deliberately.** Which application a batch belongs
 to is derived server-side from the verified key. Letting a caller name its own
@@ -79,11 +79,11 @@ import {
   createLogger,
   captureConsole,
   captureErrors,
-} from "@jf-logger/sdk/node";
+} from "@stuffs-logger/sdk/node";
 
 const logger = createLogger({
-  apiKey: process.env.JF_LOGGER_API_KEY, // jfl_sec_…
-  endpoint: process.env.JF_LOGGER_ENDPOINT, // https://logs.example.com
+  apiKey: process.env.STUFFS_LOGGER_API_KEY, // slg_sec_…
+  endpoint: process.env.STUFFS_LOGGER_ENDPOINT, // https://logs.example.com
   environment: process.env.NODE_ENV,
   release: process.env.VERCEL_GIT_COMMIT_SHA,
 });
@@ -94,8 +94,8 @@ captureErrors(logger); // uncaught exceptions and unhandled rejections
 logger.info("worker started", { queue: "emails" });
 ```
 
-Both `apiKey` and `endpoint` fall back to `JF_LOGGER_API_KEY` and
-`JF_LOGGER_ENDPOINT`, so with those set in the environment `createLogger()` on
+Both `apiKey` and `endpoint` fall back to `STUFFS_LOGGER_API_KEY` and
+`STUFFS_LOGGER_ENDPOINT`, so with those set in the environment `createLogger()` on
 its own is enough.
 
 In a short-lived script, flush before you finish:
@@ -112,10 +112,10 @@ Create the logger once, at module scope, and export it.
 
 ```ts
 // src/lib/logger.ts
-import { createLogger, captureConsole, captureErrors } from "@jf-logger/sdk";
+import { createLogger, captureConsole, captureErrors } from "@stuffs-logger/sdk";
 
 export const logger = createLogger({
-  apiKey: import.meta.env.VITE_JF_LOGGER_KEY, // jfl_pub_…
+  apiKey: import.meta.env.VITE_STUFFS_LOGGER_KEY, // slg_pub_…
   environment: import.meta.env.MODE,
 });
 
@@ -156,11 +156,11 @@ client components. Use two modules so the browser never sees the secret key.
 ```ts
 // lib/logger.server.ts
 import "server-only";
-import { createLogger, captureErrors } from "@jf-logger/sdk/node";
+import { createLogger, captureErrors } from "@stuffs-logger/sdk/node";
 
 export const logger = createLogger({
-  apiKey: process.env.JF_LOGGER_API_KEY, // jfl_sec_… — server env var, not NEXT_PUBLIC_
-  endpoint: process.env.JF_LOGGER_ENDPOINT,
+  apiKey: process.env.STUFFS_LOGGER_API_KEY, // slg_sec_… — server env var, not NEXT_PUBLIC_
+  endpoint: process.env.STUFFS_LOGGER_ENDPOINT,
   environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV,
   release: process.env.VERCEL_GIT_COMMIT_SHA,
 });
@@ -175,10 +175,10 @@ import {
   createLogger,
   captureConsole,
   captureErrors,
-} from "@jf-logger/sdk/browser";
+} from "@stuffs-logger/sdk/browser";
 
 export const logger = createLogger({
-  apiKey: process.env.NEXT_PUBLIC_JF_LOGGER_KEY, // jfl_pub_… — see "Keys" above
+  apiKey: process.env.NEXT_PUBLIC_STUFFS_LOGGER_KEY, // slg_pub_… — see "Keys" above
   environment: process.env.NEXT_PUBLIC_VERCEL_ENV,
 });
 
@@ -206,7 +206,7 @@ export async function POST(request: Request) {
 }
 ```
 
-> Never put a `jfl_sec_` key behind a `NEXT_PUBLIC_` variable. Anything
+> Never put a `slg_sec_` key behind a `NEXT_PUBLIC_` variable. Anything
 > `NEXT_PUBLIC_` is compiled into the browser bundle.
 
 ---
@@ -218,8 +218,8 @@ No build step, no module system. The bundle configures itself from its own
 
 ```html
 <script
-  src="https://unpkg.com/@jf-logger/sdk/dist/jf-logger.global.js"
-  data-jf-key="jfl_pub_…"
+  src="https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js"
+  data-jf-key="slg_pub_…"
   data-jf-endpoint="https://logs.example.com"
   data-jf-environment="production"
 ></script>
@@ -231,19 +231,19 @@ unhandled promise rejections are all captured from that point on.
 Prefer to configure it yourself? Drop the `data-*` attributes and call `init`:
 
 ```html
-<script src="https://unpkg.com/@jf-logger/sdk/dist/jf-logger.global.js"></script>
+<script src="https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js"></script>
 <script>
-  JFLogger.init({
-    apiKey: "jfl_pub_…",
+  StuffsLogger.init({
+    apiKey: "slg_pub_…",
     endpoint: "https://logs.example.com",
     environment: "production",
   });
 
-  JFLogger.info("page ready", { template: "product" });
+  StuffsLogger.info("page ready", { template: "product" });
 </script>
 ```
 
-`window.JFLogger` exposes `init`, `getLogger`, `createLogger`,
+`window.StuffsLogger` exposes `init`, `getLogger`, `createLogger`,
 `captureConsole`, `captureErrors`, `flush`, `version` and the level shortcuts
 `trace`/`debug`/`info`/`log`/`warn`/`error`/`fatal`. The shortcuts are safe to
 call before `init` — they simply do nothing.
@@ -256,10 +256,10 @@ Everything except the key has a working default.
 
 | Option            | Default                                                  | Notes                                                               |
 | ----------------- | -------------------------------------------------------- | ------------------------------------------------------------------- |
-| `apiKey`          | `JF_LOGGER_API_KEY` (Node)                               | `jfl_pub_…` in browsers, `jfl_sec_…` in Node                        |
-| `endpoint`        | Current origin (browser), `JF_LOGGER_ENDPOINT` (Node)    | Origin or full ingest URL; both work                                |
-| `environment`     | `JF_LOGGER_ENVIRONMENT`, `NODE_ENV`, else `"production"` | ≤ 64 characters                                                     |
-| `release`         | `JF_LOGGER_RELEASE`                                      | ≤ 64 characters                                                     |
+| `apiKey`          | `STUFFS_LOGGER_API_KEY` (Node)                               | `slg_pub_…` in browsers, `slg_sec_…` in Node                        |
+| `endpoint`        | Current origin (browser), `STUFFS_LOGGER_ENDPOINT` (Node)    | Origin or full ingest URL; both work                                |
+| `environment`     | `STUFFS_LOGGER_ENVIRONMENT`, `NODE_ENV`, else `"production"` | ≤ 64 characters                                                     |
+| `release`         | `STUFFS_LOGGER_RELEASE`                                      | ≤ 64 characters                                                     |
 | `minLevel`        | `"trace"`                                                | Events below it are discarded before any work is done               |
 | `sampleRate`      | `1`                                                      | `0`–`1`                                                             |
 | `sampleRates`     | —                                                        | Per-level overrides, e.g. `{ debug: 0.1 }`                          |
@@ -332,7 +332,7 @@ createLogger({
 **Delivery on navigation.** The queue is flushed on `pagehide` and when the
 document becomes hidden, using `fetch(…, { keepalive: true })`. It is _not_
 `navigator.sendBeacon`: a beacon cannot set custom headers, and ingest
-authenticates on `x-jf-key`, so a beacon would always arrive unauthenticated.
+authenticates on `x-slg-key`, so a beacon would always arrive unauthenticated.
 Browsers cap the combined body of in-flight keepalive requests at 64 KB, so the
 unload path sends exactly one request, trimmed to fit, and the remainder stays
 queued for the next page view. An unload flush never waits behind an ordinary
@@ -365,10 +365,10 @@ so it cannot re-enter the pipeline.
 
 | Import                     | Build                                 |
 | -------------------------- | ------------------------------------- |
-| `@jf-logger/sdk`           | Isomorphic; picks its runtime at load |
-| `@jf-logger/sdk/browser`   | DOM only                              |
-| `@jf-logger/sdk/node`      | Node only                             |
-| `dist/jf-logger.global.js` | IIFE exposing `window.JFLogger`       |
+| `@stuffs-logger/sdk`           | Isomorphic; picks its runtime at load |
+| `@stuffs-logger/sdk/browser`   | DOM only                              |
+| `@stuffs-logger/sdk/node`      | Node only                             |
+| `dist/stuffs-logger.global.js` | IIFE exposing `window.StuffsLogger`       |
 
 Browser bundlers are steered to the browser build automatically by the
 `browser` condition in `exports`; you only need `/browser` explicitly if your
@@ -379,16 +379,16 @@ bundler ignores conditions.
 ## Development
 
 ```sh
-pnpm --filter @jf-logger/sdk test       # vitest, node + jsdom
-pnpm --filter @jf-logger/sdk typecheck
-pnpm --filter @jf-logger/sdk lint
-pnpm --filter @jf-logger/sdk build      # ESM + CJS + .d.ts + the IIFE
-pnpm --filter @jf-logger/sdk size       # rebuilds the IIFE and prints its gzipped size
+pnpm --filter @stuffs-logger/sdk test       # vitest, node + jsdom
+pnpm --filter @stuffs-logger/sdk typecheck
+pnpm --filter @stuffs-logger/sdk lint
+pnpm --filter @stuffs-logger/sdk build      # ESM + CJS + .d.ts + the IIFE
+pnpm --filter @stuffs-logger/sdk size       # rebuilds the IIFE and prints its gzipped size
 ```
 
 The wire contract's limits — batch size, field lengths, body size — live in
-`@jf-logger/core` and are imported, never restated, so the client and the
+`@stuffs-logger/core` and are imported, never restated, so the client and the
 server can never disagree about them. `src/contract.ts` is the only module
 allowed to import from the core: the core's barrel pulls zod in, which does not
 tree-shake, so every runtime import there reaches the core's leaf modules
-through the `@jf-logger/core/*` path mapping in `tsconfig.json`.
+through the `@stuffs-logger/core/*` path mapping in `tsconfig.json`.

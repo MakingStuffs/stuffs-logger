@@ -27,7 +27,7 @@ function makeKey(overrides: Partial<IngestKeySummary> = {}): IngestKeySummary {
     applicationId: "app-1",
     name: "Checkout — production",
     type: "PUBLIC",
-    publicKey: "jfl_pub_abc123",
+    publicKey: "slg_pub_abc123",
     allowedOrigins: ["https://shop.example.test"],
     revokedAt: null,
     lastUsedAt: "2026-01-15T09:31:04.000Z",
@@ -53,7 +53,7 @@ describe("IngestKeysSection", () => {
   it("shows a browser key's value, which is designed to be public", () => {
     renderSection([makeKey()]);
 
-    expect(screen.getByText("jfl_pub_abc123")).toBeInTheDocument();
+    expect(screen.getByText("slg_pub_abc123")).toBeInTheDocument();
   });
 
   it("lists the origin allowlist that protects a browser key", () => {

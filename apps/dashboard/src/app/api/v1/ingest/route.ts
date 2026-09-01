@@ -2,7 +2,7 @@ import {
   INGEST_KEY_HEADER,
   MAX_BODY_BYTES,
   parseIngestEnvelope,
-} from "@jf-logger/core";
+} from "@stuffs-logger/core";
 import { NextResponse } from "next/server";
 
 import { ApiError } from "@/lib/api/errors";
@@ -239,7 +239,7 @@ export const POST = withErrorHandler(
 /**
  * The CORS preflight.
  *
- * A preflight cannot carry `x-jf-key` — browsers send only the method and the
+ * A preflight cannot carry `x-slg-key` — browsers send only the method and the
  * requested headers — so the exact key cannot be identified here. The origin
  * is therefore checked against the union of every live public key's allowlist,
  * which is the same list the POST will judge it against, and an unregistered

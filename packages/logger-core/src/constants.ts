@@ -1,7 +1,7 @@
 /**
  * The hard limits of the ingest wire contract.
  *
- * These live in `@jf-logger/core` so the SDK and the server enforce the SAME
+ * These live in `@stuffs-logger/core` so the SDK and the server enforce the SAME
  * numbers. If the SDK trimmed at one bound and the server rejected at another,
  * every batch on the seam between them would be silently dropped.
  */
@@ -53,10 +53,10 @@ export const MAX_CLOCK_SKEW_PAST_MS = 30 * 24 * 60 * 60 * 1000;
 export const INGEST_PATH = "/api/v1/ingest";
 
 /** The header carrying the ingest key. */
-export const INGEST_KEY_HEADER = "x-jf-key";
+export const INGEST_KEY_HEADER = "x-slg-key";
 
 /** Prefix of a browser-safe, origin-gated ingest key. */
-export const PUBLIC_KEY_PREFIX = "jfl_pub_";
+export const PUBLIC_KEY_PREFIX = "slg_pub_";
 
-/** Prefix of a server-side ingest key, formatted `jfl_sec_<keyId>_<secret>`. */
-export const SECRET_KEY_PREFIX = "jfl_sec_";
+/** Prefix of a server-side ingest key, formatted `slg_sec_<keyId>_<secret>`. */
+export const SECRET_KEY_PREFIX = "slg_sec_";

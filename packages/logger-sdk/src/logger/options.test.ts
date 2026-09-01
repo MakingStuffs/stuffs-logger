@@ -68,7 +68,7 @@ describe("resolveOptions", () => {
 
   it("reads the environment when nothing is configured", () => {
     vi.stubGlobal("process", {
-      env: { JF_LOGGER_ENVIRONMENT: "staging", JF_LOGGER_RELEASE: "abc123" },
+      env: { STUFFS_LOGGER_ENVIRONMENT: "staging", STUFFS_LOGGER_RELEASE: "abc123" },
     });
 
     expect(resolveOptions({}, adapter)).toMatchObject({
@@ -78,7 +78,7 @@ describe("resolveOptions", () => {
   });
 
   it("prefers explicit options over the environment", () => {
-    vi.stubGlobal("process", { env: { JF_LOGGER_ENVIRONMENT: "staging" } });
+    vi.stubGlobal("process", { env: { STUFFS_LOGGER_ENVIRONMENT: "staging" } });
 
     expect(resolveOptions({ environment: "prod" }, adapter).environment).toBe(
       "prod",

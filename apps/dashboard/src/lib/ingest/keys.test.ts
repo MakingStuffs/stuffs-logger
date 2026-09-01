@@ -11,10 +11,10 @@ import {
   type IngestKeyStore,
 } from "./keys";
 
-const PUBLIC_KEY = `jfl_pub_${"p".repeat(32)}`;
+const PUBLIC_KEY = `slg_pub_${"p".repeat(32)}`;
 const SECRET_KEY_ID = "lookuphandle1234";
 const SECRET_SEGMENT = "s".repeat(43);
-const SECRET_KEY = `jfl_sec_${SECRET_KEY_ID}_${SECRET_SEGMENT}`;
+const SECRET_KEY = `slg_sec_${SECRET_KEY_ID}_${SECRET_SEGMENT}`;
 
 const ALLOWED_ORIGIN = "https://app.example.test";
 
@@ -148,7 +148,7 @@ describe("verifyIngestKey", () => {
     });
 
     it("refuses an unknown key", async () => {
-      const result = await verifyIngestKey(`jfl_pub_${"z".repeat(32)}`, {
+      const result = await verifyIngestKey(`slg_pub_${"z".repeat(32)}`, {
         origin: ALLOWED_ORIGIN,
         store: makeStore([makeKey()]),
       });
@@ -185,7 +185,7 @@ describe("verifyIngestKey", () => {
     });
 
     it("refuses a key whose secret does not match the stored hash", async () => {
-      const wrongSecret = `jfl_sec_${SECRET_KEY_ID}_${"x".repeat(43)}`;
+      const wrongSecret = `slg_sec_${SECRET_KEY_ID}_${"x".repeat(43)}`;
 
       const result = await verifyIngestKey(wrongSecret, {
         origin: null,
@@ -210,7 +210,7 @@ describe("verifyIngestKey", () => {
 
     it("refuses an unknown lookup handle", async () => {
       const result = await verifyIngestKey(
-        `jfl_sec_otherhandle999_${SECRET_SEGMENT}`,
+        `slg_sec_otherhandle999_${SECRET_SEGMENT}`,
         {
           origin: null,
           store: makeStore([makeSecretKey()]),
@@ -268,12 +268,12 @@ describe("verifyIngestKey", () => {
     it.each([
       ["a missing header", null],
       ["an empty string", ""],
-      ["an unknown prefix", `jfl_adm_${"a".repeat(32)}`],
+      ["an unknown prefix", `slg_adm_${"a".repeat(32)}`],
       ["a bare random string", "a".repeat(32)],
-      ["a public prefix with no random segment", "jfl_pub_"],
-      ["a secret key with no secret segment", `jfl_sec_${SECRET_KEY_ID}`],
-      ["a secret key with an empty secret", `jfl_sec_${SECRET_KEY_ID}_`],
-      ["an absurdly long value", `jfl_pub_${"a".repeat(5000)}`],
+      ["a public prefix with no random segment", "slg_pub_"],
+      ["a secret key with no secret segment", `slg_sec_${SECRET_KEY_ID}`],
+      ["a secret key with an empty secret", `slg_sec_${SECRET_KEY_ID}_`],
+      ["an absurdly long value", `slg_pub_${"a".repeat(5000)}`],
     ])("refuses %s", async (_label, presented) => {
       const result = await verifyIngestKey(presented, {
         origin: ALLOWED_ORIGIN,

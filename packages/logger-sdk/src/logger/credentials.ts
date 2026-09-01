@@ -11,7 +11,7 @@ import type { LogSource } from "../contract";
  * The ingest server enforces this too — it answers 403 to a public key
  * presented with `source: "node"` — but the check that matters is the one on
  * the client, because the dangerous direction never reaches the server at all:
- * a `jfl_sec_` key configured in browser code has already been published to
+ * a `slg_sec_` key configured in browser code has already been published to
  * every visitor by the time the first request is made. Refusing to send with
  * it does not undo that, but it turns a silent leak into a loud one during
  * development, which is when it can still be fixed.
@@ -29,7 +29,7 @@ export type CredentialCheck =
  * @param source - The runtime the batch will be attributed to.
  * @returns The accepted key, or the reason it was refused.
  * @example
- * checkCredential("jfl_sec_…", "browser");
+ * checkCredential("slg_sec_…", "browser");
  * // { ok: false, reason: "…secret ingest key…" }
  */
 export function checkCredential(

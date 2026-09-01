@@ -1,4 +1,4 @@
-import { jsonByteLength } from "@jf-logger/core";
+import { jsonByteLength } from "@stuffs-logger/core";
 
 /**
  * Bounding the heavy columns in the LIST projection.

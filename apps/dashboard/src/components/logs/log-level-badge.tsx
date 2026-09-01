@@ -1,4 +1,4 @@
-import type { LogLevel } from "@jf-logger/core";
+import type { LogLevel } from "@stuffs-logger/core";
 import { Badge } from "@journey-further/salient-ui/ui/badge";
 
 import { LEVEL_BADGE_VARIANT, LEVEL_LABELS } from "./filter-vocabulary";

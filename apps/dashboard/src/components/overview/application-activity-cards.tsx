@@ -1,4 +1,4 @@
-import { ERROR_LEVELS } from "@jf-logger/core";
+import { ERROR_LEVELS } from "@stuffs-logger/core";
 import { Badge } from "@journey-further/salient-ui/ui/badge";
 import {
   Card,

@@ -29,7 +29,7 @@ describe("corsHeaders", () => {
     const headers = corsHeaders(ORIGIN);
 
     expect(headers["access-control-allow-methods"]).toBe("POST, OPTIONS");
-    expect(headers["access-control-allow-headers"]).toContain("x-jf-key");
+    expect(headers["access-control-allow-headers"]).toContain("x-slg-key");
   });
 
   it("never grants credentials", () => {

@@ -14,7 +14,7 @@ import type { ApplicationSummary, IngestKeySummary } from "@/lib/logs/dto";
  * constant, and rows are projected before they are returned.
  *
  * The application list is not public information inside the product — it names
- * every client whose app reports to jf-logger — so it carries the same gate as
+ * every client whose app reports to stuffs-logger — so it carries the same gate as
  * the logs themselves. Per-application entitlement for client-scoped users is
  * a deliberate future extension; see the note in `lib/logs/queries.ts`.
  */

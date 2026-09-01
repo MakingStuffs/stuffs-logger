@@ -42,7 +42,7 @@ export const prismaIngestKeyStore: IngestKeyStore = {
 /**
  * Every origin registered by a live public key.
  *
- * Used ONLY by the CORS preflight, which cannot see the `x-jf-key` header —
+ * Used ONLY by the CORS preflight, which cannot see the `x-slg-key` header —
  * browsers do not send custom headers on an `OPTIONS` preflight, so the exact
  * key cannot be identified at that point. The union of live allowlists keeps
  * the preflight consistent with the allowlist the POST will actually be judged

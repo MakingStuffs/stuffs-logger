@@ -1,5 +1,5 @@
 /**
- * `@jf-logger/core` — the single source of truth for the jf-logger wire
+ * `@stuffs-logger/core` — the single source of truth for the stuffs-logger wire
  * contract.
  *
  * Imported by BOTH the SDK and the dashboard so the limits the client enforces

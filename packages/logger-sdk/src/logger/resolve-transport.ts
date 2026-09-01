@@ -15,7 +15,7 @@ import { createHttpTransport } from "./transport";
  */
 
 /** Environment variable consulted when no `apiKey` option is given. */
-const API_KEY_ENV_VAR = "JF_LOGGER_API_KEY";
+const API_KEY_ENV_VAR = "STUFFS_LOGGER_API_KEY";
 
 /**
  * Builds the transport a logger will use.
@@ -25,7 +25,7 @@ const API_KEY_ENV_VAR = "JF_LOGGER_API_KEY";
  * @param report - Where a configuration failure is announced.
  * @returns The transport, or `undefined` when the logger must stay inert.
  * @example
- * resolveTransport({ apiKey: "jfl_pub_…" }, "browser", report);
+ * resolveTransport({ apiKey: "slg_pub_…" }, "browser", report);
  */
 export function resolveTransport(
   options: LoggerOptions,

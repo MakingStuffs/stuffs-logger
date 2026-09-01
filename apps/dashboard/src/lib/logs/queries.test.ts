@@ -33,7 +33,7 @@ function makeSession(
   return {
     user: {
       id: "user-1",
-      email: "someone@journeyfurther.com",
+      email: "someone@makingstuffs.co.uk",
       name: "Someone",
       scope: "INTERNAL_USER",
       isActive: true,

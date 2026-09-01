@@ -52,7 +52,7 @@ export default async function ApplicationPage({
       <AppShell user={session.user}>
         <AppHeader
           header="Application"
-          copy="An application that sends logs to JF Logger."
+          copy="An application that sends logs to Stuffs Logger."
           icon={Boxes}
           breadcrumbs={[
             { label: "Applications", href: "/apps" },

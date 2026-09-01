@@ -31,7 +31,7 @@ export default function RouteError({
       <h1 className="text-xl font-semibold">Something went wrong</h1>
       <p className="text-muted-foreground max-w-prose text-sm">
         This page could not be loaded. Trying again usually helps; if it keeps
-        happening, quote the reference below to whoever runs JF Logger.
+        happening, quote the reference below to whoever runs Stuffs Logger.
       </p>
       {error.digest === undefined ? null : (
         <p className="text-muted-foreground font-mono text-xs">

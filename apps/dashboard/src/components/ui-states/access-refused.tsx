@@ -10,10 +10,10 @@ import { EmptyState } from "./empty-state";
  * Turning the data layer's refusal into a designed page state.
  *
  * Every read in this app is gated on `assertInternalViewer` and THROWS for a
- * caller who is signed in but is not Journey Further staff. That is the right
+ * caller who is signed in but is not Making Stuffs staff. That is the right
  * shape for a data-access function — quietly returning nothing would read as
  * "there are no logs" — but on a page it is an outcome to render, not a fault:
- * letting it reach `error.tsx` would tell a colleague that JF Logger is broken
+ * letting it reach `error.tsx` would tell a colleague that Stuffs Logger is broken
  * when it is working exactly as designed.
  */
 
@@ -73,15 +73,15 @@ interface RefusalCopy {
 const REFUSAL_COPY: Readonly<Record<AccessRefusalCode, RefusalCopy>> = {
   FORBIDDEN: {
     icon: ShieldAlert,
-    title: "Journey Further staff only",
+    title: "Making Stuffs staff only",
     description:
-      "JF Logger is an internal engineering tool. A log line carries whatever an application logged — request paths, identifiers, error payloads — and ingest keys are write credentials on top of that, so only Journey Further staff can read them. Nothing has gone wrong; if you think your account should have access, ask whoever runs JF Logger to check its scope.",
+      "Stuffs Logger is an internal engineering tool. A log line carries whatever an application logged — request paths, identifiers, error payloads — and ingest keys are write credentials on top of that, so only Making Stuffs staff can read them. Nothing has gone wrong; if you think your account should have access, ask whoever runs Stuffs Logger to check its scope.",
   },
   UNAUTHORIZED: {
     icon: UserX,
     title: "Your account is no longer active",
     description:
-      "This account has been deactivated, so it can no longer read anything in JF Logger. Sign in again with an active account, or ask whoever runs JF Logger to reactivate this one.",
+      "This account has been deactivated, so it can no longer read anything in Stuffs Logger. Sign in again with an active account, or ask whoever runs Stuffs Logger to reactivate this one.",
   },
 };
 

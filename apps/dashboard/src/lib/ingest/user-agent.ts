@@ -1,4 +1,4 @@
-import type { DeviceType } from "@jf-logger/core";
+import type { DeviceType } from "@stuffs-logger/core";
 
 /**
  * Coarse device / OS / browser derivation from a user-agent string.

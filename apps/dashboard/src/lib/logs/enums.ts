@@ -3,12 +3,12 @@ import type {
   LogLevel,
   LoggerKind,
   LogSource,
-} from "@jf-logger/core";
+} from "@stuffs-logger/core";
 import { $Enums } from "@prisma/client";
 
 /**
  * The one translation between the lowercase wire vocabulary of
- * `@jf-logger/core` and the uppercase Postgres enums.
+ * `@stuffs-logger/core` and the uppercase Postgres enums.
  *
  * Explicit lookup tables rather than `toUpperCase()`: `satisfies` makes each
  * map total in both directions, so adding a level to the taxonomy without

@@ -7,11 +7,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: `${APP_DISPLAY_NAME} - by Journey Further`,
+    default: `${APP_DISPLAY_NAME} - by Making Stuffs`,
     template: `%s · ${APP_DISPLAY_NAME}`,
   },
   description:
-    "Self-hosted application logging for Journey Further: search, filter and triage logs from every app in one place.",
+    "Self-hosted application logging for Making Stuffs: search, filter and triage logs from every app in one place.",
 };
 
 export const viewport = {

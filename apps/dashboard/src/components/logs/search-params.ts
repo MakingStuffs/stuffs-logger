@@ -1,4 +1,4 @@
-import type { LogLevel } from "@jf-logger/core";
+import type { LogLevel } from "@stuffs-logger/core";
 
 import { DEFAULT_PAGE_SIZE } from "@/lib/logs/filters";
 import type { LogFilters, RawSearchParams } from "@/lib/logs/filters";

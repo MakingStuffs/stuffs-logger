@@ -16,7 +16,7 @@ describe("resolveAccess", () => {
     const outcome = await resolveAccess(() => {
       throw new ApiError(
         "FORBIDDEN",
-        "Only Journey Further staff can use jf-logger.",
+        "Only Making Stuffs staff can use stuffs-logger.",
       );
     });
 
@@ -55,7 +55,7 @@ describe("AccessRefused", () => {
     render(<AccessRefused code="FORBIDDEN" />);
 
     expect(
-      screen.getByRole("heading", { name: "Journey Further staff only" }),
+      screen.getByRole("heading", { name: "Making Stuffs staff only" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/internal engineering tool/i)).toBeInTheDocument();
   });
@@ -64,7 +64,7 @@ describe("AccessRefused", () => {
     render(<AccessRefused code="FORBIDDEN" />);
 
     expect(
-      screen.getByText(/ask whoever runs JF Logger to check its scope/i),
+      screen.getByText(/ask whoever runs Stuffs Logger to check its scope/i),
     ).toBeInTheDocument();
   });
 

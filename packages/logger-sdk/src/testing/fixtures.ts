@@ -14,10 +14,10 @@ import type { Transport, TransportOutcome, TransportRequest } from "../types";
  */
 
 /** A key of the shape the browser is allowed to use. */
-export const PUBLIC_KEY = `jfl_pub_${"a".repeat(32)}`;
+export const PUBLIC_KEY = `slg_pub_${"a".repeat(32)}`;
 
 /** A key of the shape only a server may use. */
-export const SECRET_KEY = `jfl_sec_keyid123_${"b".repeat(32)}`;
+export const SECRET_KEY = `slg_sec_keyid123_${"b".repeat(32)}`;
 
 /** A transport that records what it was asked to send. */
 export interface FakeTransport extends Transport {

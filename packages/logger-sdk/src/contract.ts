@@ -1,12 +1,12 @@
 /**
- * The one and only seam between the SDK and `@jf-logger/core`.
+ * The one and only seam between the SDK and `@stuffs-logger/core`.
  *
- * The core's barrel (`@jf-logger/core`) re-exports its zod-backed ingest
+ * The core's barrel (`@stuffs-logger/core`) re-exports its zod-backed ingest
  * schemas, and zod is NOT tree-shakeable out of that barrel — measured with
  * esbuild, a bundle that imports only `MAX_EVENTS_PER_BATCH` from the barrel
  * still weighs 87 KB gzipped because zod's top-level schema construction is
  * not statically provable as side-effect free. Every RUNTIME value therefore
- * comes from the core's leaf modules via the `@jf-logger/core/*` path mapping
+ * comes from the core's leaf modules via the `@stuffs-logger/core/*` path mapping
  * in this package's tsconfig; that mapping exists only because the core's
  * `exports` map publishes the barrel alone. TYPES are safe to take from the
  * barrel: `export type` is erased before a bundler ever sees it.
@@ -31,9 +31,9 @@ export {
   MAX_USER_AGENT_LENGTH,
   PUBLIC_KEY_PREFIX,
   SECRET_KEY_PREFIX,
-} from "@jf-logger/core/constants";
+} from "@stuffs-logger/core/constants";
 
-export { LOG_LEVELS, levelRank } from "@jf-logger/core/taxonomy";
+export { LOG_LEVELS, levelRank } from "@stuffs-logger/core/taxonomy";
 
 /**
  * Redaction is ONE control with two ends, so it is one implementation. The
@@ -44,20 +44,20 @@ export { LOG_LEVELS, levelRank } from "@jf-logger/core/taxonomy";
 export {
   createKeyRedactor,
   DEFAULT_REDACTION_KEYS,
-} from "@jf-logger/core/redaction";
+} from "@stuffs-logger/core/redaction";
 
-export type { KeyRedactor } from "@jf-logger/core/redaction";
+export type { KeyRedactor } from "@stuffs-logger/core/redaction";
 
-export { jsonByteLength } from "@jf-logger/core/json";
+export { jsonByteLength } from "@stuffs-logger/core/json";
 
-export { parseIngestKey } from "@jf-logger/core/keys";
+export { parseIngestKey } from "@stuffs-logger/core/keys";
 
-export type { JsonValue } from "@jf-logger/core/json";
-export type { LoggerKind, LogLevel, LogSource } from "@jf-logger/core/taxonomy";
+export type { JsonValue } from "@stuffs-logger/core/json";
+export type { LoggerKind, LogLevel, LogSource } from "@stuffs-logger/core/taxonomy";
 
 export type {
   IngestBatch,
   LogErrorPayload,
   LogEventPayload,
   SdkInfo,
-} from "@jf-logger/core";
+} from "@stuffs-logger/core";

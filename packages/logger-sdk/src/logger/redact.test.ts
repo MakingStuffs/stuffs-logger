@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REDACTION_KEYS as CORE_REDACTION_KEYS,
   DEFAULT_REDACTION_REPLACEMENT,
-} from "@jf-logger/core/redaction";
+} from "@stuffs-logger/core/redaction";
 
 import { DEFAULT_REDACTION_KEYS } from "../public-api";
 import { createRedactor } from "./redact";

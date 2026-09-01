@@ -4,14 +4,14 @@ import type { LogLevel } from "./contract";
  * The SDK's own defaults and internal bounds.
  *
  * Anything that is part of the WIRE CONTRACT (batch size ceilings, field
- * lengths, body limits) belongs in `@jf-logger/core` and is re-exported by
+ * lengths, body limits) belongs in `@stuffs-logger/core` and is re-exported by
  * `./contract` — it must be identical on both sides of the network. The values
  * here are client-side policy: how eagerly to flush, how much to buffer, how
  * hard to retry.
  */
 
 /** Reported to the server as the producing SDK. Mirrors `package.json`. */
-export const SDK_NAME = "@jf-logger/sdk";
+export const SDK_NAME = "@stuffs-logger/sdk";
 
 /** Mirrors the `version` field of this package's `package.json`. */
 export const SDK_VERSION = "0.1.0";
@@ -66,7 +66,7 @@ export const MAX_RETRY_DELAY_MS = 60000;
 export const MAX_CONTEXT_NODES = 512;
 
 /** Where the browser session id is persisted. */
-export const SESSION_STORAGE_KEY = "jf-logger.session-id";
+export const SESSION_STORAGE_KEY = "stuffs-logger.session-id";
 
 /** Stands in for an event whose message normalized to nothing. */
 export const EMPTY_MESSAGE_PLACEHOLDER = "(empty)";

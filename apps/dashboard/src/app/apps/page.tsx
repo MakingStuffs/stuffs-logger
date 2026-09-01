@@ -32,7 +32,7 @@ export default async function ApplicationsPage() {
     <AppShell user={session.user}>
       <AppHeader
         header="Applications"
-        copy="Everything sending logs to JF Logger, and the keys it sends them with."
+        copy="Everything sending logs to Stuffs Logger, and the keys it sends them with."
         icon={Boxes}
       >
         <Button asChild variant="outline" size="sm">

@@ -1,13 +1,13 @@
-# jf-logger — known follow-ups
+# stuffs-logger — known follow-ups
 
 Everything here was found by review, deliberately deferred, and is not a surprise.
 Nothing below blocks the branch; each is a decision or a scoped piece of work.
 
 ## 1. Register the app's access mode in the portal (DECISION NEEDED, before deploy)
 
-Log reads are gated to internal Journey Further staff (`assertInternalViewer`). Whether a
+Log reads are gated to internal Making Stuffs staff (`assertInternalViewer`). Whether a
 non-staff user can reach the app at all also depends on the `accessMode` set for the
-`jf-logger` entry in the portal Application catalog, which lives outside this repo.
+`stuffs-logger` entry in the portal Application catalog, which lives outside this repo.
 Set it deliberately. `STAFF` matches how the code is written today.
 
 If you later want a client to see only their own application's logs, that needs a
@@ -19,7 +19,7 @@ product decision, not a bug.
 
 `ApplicationUsage` is keyed on `(applicationId, day)`. A public key is public by design,
 and `Origin` is only truthful from a real browser, so someone who reads your page source
-can present a scraped `jfl_pub_` key with a forged `Origin` and `source: "browser"` and
+can present a scraped `slg_pub_` key with a forged `Origin` and `source: "browser"` and
 spend an application's whole daily quota in roughly 2,500-4,000 requests.
 
 The gap is not the ceiling, it is recovery: **revoking the abused key does not restore

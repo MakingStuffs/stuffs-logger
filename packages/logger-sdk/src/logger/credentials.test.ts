@@ -34,7 +34,7 @@ describe("checkCredential", () => {
 
   it("refuses a malformed key", () => {
     expect(checkCredential("not-a-key", "node").ok).toBe(false);
-    expect(checkCredential("jfl_pub_short", "browser").ok).toBe(false);
+    expect(checkCredential("slg_pub_short", "browser").ok).toBe(false);
   });
 
   it("refuses a missing key", () => {

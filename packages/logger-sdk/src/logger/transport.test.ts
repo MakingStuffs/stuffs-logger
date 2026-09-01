@@ -9,7 +9,7 @@ const ENDPOINT = "https://logs.example.com/api/v1/ingest";
 
 function makeBatch(events = 1): IngestBatch {
   return {
-    sdk: { name: "@jf-logger/sdk", version: "0.1.0" },
+    sdk: { name: "@stuffs-logger/sdk", version: "0.1.0" },
     environment: "test",
     source: "node",
     events: Array.from({ length: events }, (_unused, index) => ({

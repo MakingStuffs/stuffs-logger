@@ -116,15 +116,15 @@ export interface Transport {
  */
 export interface LoggerOptions {
   /**
-   * The ingest key. A `jfl_pub_…` key in the browser, a `jfl_sec_…` key in
+   * The ingest key. A `slg_pub_…` key in the browser, a `slg_sec_…` key in
    * Node — the SDK refuses the other way round in both directions.
    *
-   * Falls back to `JF_LOGGER_API_KEY` when running under Node.
+   * Falls back to `STUFFS_LOGGER_API_KEY` when running under Node.
    */
   apiKey?: string;
   /**
    * Ingest origin or full ingest URL. Defaults to the current origin in the
-   * browser and `JF_LOGGER_ENDPOINT` under Node.
+   * browser and `STUFFS_LOGGER_ENDPOINT` under Node.
    *
    * Must be `https:` unless the host is the loopback one — the ingest key
    * travels in a header on every batch.
@@ -132,7 +132,7 @@ export interface LoggerOptions {
   endpoint?: string;
   /** Defaults to `NODE_ENV` under Node, otherwise `"production"`. */
   environment?: string;
-  /** Build/commit identifier. Defaults to `JF_LOGGER_RELEASE` under Node. */
+  /** Build/commit identifier. Defaults to `STUFFS_LOGGER_RELEASE` under Node. */
   release?: string;
   /** Overrides runtime detection. */
   source?: LogSource;

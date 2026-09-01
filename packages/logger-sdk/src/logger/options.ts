@@ -25,10 +25,10 @@ import type { LoggerOptions } from "../types";
  */
 
 /** Environment variable consulted when no `release` option is given. */
-const RELEASE_ENV_VAR = "JF_LOGGER_RELEASE";
+const RELEASE_ENV_VAR = "STUFFS_LOGGER_RELEASE";
 
 /** Environment variable consulted when no `environment` option is given. */
-const ENVIRONMENT_ENV_VAR = "JF_LOGGER_ENVIRONMENT";
+const ENVIRONMENT_ENV_VAR = "STUFFS_LOGGER_ENVIRONMENT";
 
 /** The settled configuration one logger instance runs on. */
 export interface ResolvedOptions {

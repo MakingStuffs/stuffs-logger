@@ -3,7 +3,7 @@ import {
   MAX_CLOCK_SKEW_FUTURE_MS,
   MAX_CLOCK_SKEW_PAST_MS,
   type IngestEnvelope,
-} from "@jf-logger/core";
+} from "@stuffs-logger/core";
 import { describe, expect, it } from "vitest";
 
 import { normaliseBatch } from "./normalise";
@@ -26,7 +26,7 @@ function makeEnvelope(
   overrides: Partial<IngestEnvelope> = {},
 ): IngestEnvelope {
   return {
-    sdk: { name: "@jf-logger/sdk", version: "0.1.0" },
+    sdk: { name: "@stuffs-logger/sdk", version: "0.1.0" },
     environment: "production",
     source: "browser",
     events,

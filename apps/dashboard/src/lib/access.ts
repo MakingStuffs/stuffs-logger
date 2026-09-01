@@ -37,9 +37,9 @@ function assertActiveViewer(session: SalientSession): void {
 }
 
 /**
- * Asserts the session belongs to an internal Journey Further user.
+ * Asserts the session belongs to an internal Making Stuffs user.
  *
- * The gate on EVERY read and every mutation in this app. jf-logger is an
+ * The gate on EVERY read and every mutation in this app. stuffs-logger is an
  * internal engineering tool: one session sees every application's logs, and a
  * log line carries whatever a customer application happened to log — request
  * paths, user identifiers, error payloads. Ingest keys are write credentials
@@ -57,7 +57,7 @@ export function assertInternalViewer(session: SalientSession): void {
   if (!isInternalUser(session)) {
     throw new ApiError(
       "FORBIDDEN",
-      "Only Journey Further staff can use jf-logger.",
+      "Only Making Stuffs staff can use stuffs-logger.",
       {
         logContext: `non-internal user ${session.user.id} refused`,
       },

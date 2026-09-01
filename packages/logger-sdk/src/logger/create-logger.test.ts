@@ -171,7 +171,7 @@ describe("createLoggerWith", () => {
       await logger.flush();
 
       expect(transport.batches[0]).toMatchObject({
-        sdk: { name: "@jf-logger/sdk", version: expect.any(String) },
+        sdk: { name: "@stuffs-logger/sdk", version: expect.any(String) },
         environment: "staging",
         release: "abc123",
         source: "node",

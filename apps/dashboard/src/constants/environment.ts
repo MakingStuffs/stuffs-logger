@@ -7,10 +7,10 @@
  * This app's slug in the Salient application catalog. Every session gate and
  * the cron endpoint's API-token binding are scoped to it.
  */
-const APP_SLUG = "jf-logger" as const;
+const APP_SLUG = "stuffs-logger" as const;
 
 /** Display name, for page titles and the app chrome. */
-const APP_DISPLAY_NAME = "JF Logger" as const;
+const APP_DISPLAY_NAME = "Stuffs Logger" as const;
 
 /**
  * The portal origin.

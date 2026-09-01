@@ -17,7 +17,7 @@ import type {
  *
  * `navigator.sendBeacon` is deliberately not used, despite being the usual
  * answer for unload-time delivery: a beacon cannot carry custom headers, and
- * the ingest contract authenticates with `x-jf-key`. A beacon would therefore
+ * the ingest contract authenticates with `x-slg-key`. A beacon would therefore
  * always arrive unauthenticated and be rejected. `fetch` with `keepalive`
  * gives the same outlives-the-document guarantee AND can send the header, so
  * that is what the unload path uses.
@@ -33,7 +33,7 @@ const MAX_RETRY_AFTER_MS = 300000;
 export interface HttpTransportOptions {
   /** Absolute ingest URL. */
   endpoint: string;
-  /** The ingest key, sent in the `x-jf-key` header. */
+  /** The ingest key, sent in the `x-slg-key` header. */
   apiKey: string;
   /** Where swallowed failures are announced. */
   report: DiagnosticHandler;

@@ -11,13 +11,13 @@ import { isBrowserRuntime, readEnv } from "../context/runtime";
  */
 
 /** Environment variable consulted when no `endpoint` option is given. */
-const ENDPOINT_ENV_VAR = "JF_LOGGER_ENDPOINT";
+const ENDPOINT_ENV_VAR = "STUFFS_LOGGER_ENDPOINT";
 
 /**
  * Hosts where cleartext `http:` is allowed.
  *
  * Everywhere else it is refused: an ingest key travels in a request header on
- * every batch, and a `jfl_sec_` key put on the wire in cleartext is a
+ * every batch, and a `slg_sec_` key put on the wire in cleartext is a
  * credential handed to anything between the process and the server. Local
  * development has no such path, and demanding TLS there would mean nobody
  * could run the dashboard on `localhost`.

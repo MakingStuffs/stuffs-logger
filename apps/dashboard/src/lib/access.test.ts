@@ -15,7 +15,7 @@ function makeSession(
   return {
     user: {
       id: "user-1",
-      email: "someone@journeyfurther.com",
+      email: "someone@makingstuffs.co.uk",
       name: "Someone",
       scope: "INTERNAL_USER",
       isActive: true,
@@ -94,10 +94,10 @@ describe("assertInternalViewer", () => {
     }
   });
 
-  it("does not treat a journeyfurther.com address as internal on its own", () => {
+  it("does not treat a makingstuffs.co.uk address as internal on its own", () => {
     const session = makeSession({
       scope: "CLIENT_USER",
-      email: "contractor@journeyfurther.com",
+      email: "contractor@makingstuffs.co.uk",
     });
 
     expect(() => assertInternalViewer(session)).toThrow(ApiError);

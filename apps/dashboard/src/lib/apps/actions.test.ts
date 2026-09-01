@@ -1,4 +1,4 @@
-import { PUBLIC_KEY_PREFIX, SECRET_KEY_PREFIX } from "@jf-logger/core";
+import { PUBLIC_KEY_PREFIX, SECRET_KEY_PREFIX } from "@stuffs-logger/core";
 import {
   getSession,
   type SalientSession,
@@ -31,7 +31,7 @@ function makeSession(
   return {
     user: {
       id: "user-1",
-      email: "someone@journeyfurther.com",
+      email: "someone@makingstuffs.co.uk",
       name: "Someone",
       scope: "INTERNAL_USER",
       isActive: true,

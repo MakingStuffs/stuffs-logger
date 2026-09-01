@@ -1,4 +1,4 @@
-import { ERROR_LEVELS } from "@jf-logger/core";
+import { ERROR_LEVELS } from "@stuffs-logger/core";
 import type { Prisma } from "@prisma/client";
 import type { SalientSession } from "@journey-further/salient-auth/server";
 
@@ -28,7 +28,7 @@ import { projectListContext, projectListStack } from "./projection";
  *
  * Four rules hold for everything in this file:
  *
- *  0. Every read is gated on `assertInternalViewer`. jf-logger is an internal
+ *  0. Every read is gated on `assertInternalViewer`. stuffs-logger is an internal
  *     engineering tool: one session can see every application's logs, and log
  *     lines carry whatever a customer application happened to log, so the read
  *     gate is the same one that guards key management rather than a looser

@@ -1,4 +1,4 @@
-import { INGEST_KEY_HEADER, MAX_BODY_BYTES } from "@jf-logger/core";
+import { INGEST_KEY_HEADER, MAX_BODY_BYTES } from "@stuffs-logger/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetOriginRegistrySnapshot } from "@/lib/ingest/origin-registry";
@@ -34,7 +34,7 @@ vi.mock("@/lib/ingest/store", () => ({
 }));
 
 const ORIGIN = "https://app.example.test";
-const PUBLIC_KEY = `jfl_pub_${"p".repeat(32)}`;
+const PUBLIC_KEY = `slg_pub_${"p".repeat(32)}`;
 const APPLICATION_ID = "app-1";
 
 function publicKeyRow(overrides: Record<string, unknown> = {}) {
@@ -53,7 +53,7 @@ function publicKeyRow(overrides: Record<string, unknown> = {}) {
 
 function batch(overrides: Record<string, unknown> = {}) {
   return {
-    sdk: { name: "@jf-logger/sdk", version: "0.1.0" },
+    sdk: { name: "@stuffs-logger/sdk", version: "0.1.0" },
     environment: "production",
     source: "browser",
     events: [
