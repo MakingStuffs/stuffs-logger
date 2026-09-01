@@ -11,8 +11,10 @@ import { build } from "tsup";
  * tsup cannot emit an IIFE alongside ESM/CJS in one config — the IIFE needs its
  * own `globalName`, a single entry and minification — so it gets its own pass.
  * The sizes are printed on every build and written to `dist/size.json` because
- * "under 5 KB gzipped" is a requirement, and a requirement nobody measures is a
- * requirement that has quietly stopped holding.
+ * bundle size is a requirement, and a requirement nobody measures is a
+ * requirement that has quietly stopped holding. The target was 5 KB gzipped;
+ * the core entry currently measures just over 6 KB, and the number is recorded
+ * here rather than rounded down in a README nobody re-measures.
  *
  * Three numbers, because they answer different questions:
  *

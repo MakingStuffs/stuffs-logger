@@ -41,7 +41,7 @@ describe("toMessage", () => {
     expect(toMessage(new Error("boom"))).toBe("boom");
   });
 
-  it("serialises an object", () => {
+  it("serializes an object", () => {
     expect(toMessage({ a: 1 })).toBe('{"a":1}');
   });
 
@@ -134,10 +134,10 @@ describe("normalizeContext", () => {
     let nested: Record<string, unknown> = { leaf: true };
     for (let index = 0; index < 20; index += 1) nested = { nested };
 
-    const serialised = JSON.stringify(normalizeContext(nested, undefined));
+    const serialized = JSON.stringify(normalizeContext(nested, undefined));
 
-    expect(serialised).toContain("[truncated]");
-    expect(serialised).not.toContain("leaf");
+    expect(serialized).toContain("[truncated]");
+    expect(serialized).not.toContain("leaf");
   });
 
   it("stays within the contract's context byte limit", () => {
@@ -160,9 +160,9 @@ describe("normalizeContext", () => {
     const wide: Record<string, number> = {};
     for (let index = 0; index < 5000; index += 1) wide[`k${index}`] = index;
 
-    const normalised = normalizeContext(wide, undefined);
+    const normalized = normalizeContext(wide, undefined);
 
-    expect(Object.keys(normalised ?? {}).length).toBeLessThan(5000);
+    expect(Object.keys(normalized ?? {}).length).toBeLessThan(5000);
   });
 
   it("renders values JSON cannot hold", () => {
@@ -199,5 +199,31 @@ describe("mergeContext", () => {
 
   it("returns nothing when every layer is empty", () => {
     expect(mergeContext(undefined, undefined)).toBeUndefined();
+  });
+
+  it("re-bounds the merged result, because each layer was budgeted alone", () => {
+    const half = "x".repeat(MAX_CONTEXT_BYTES * 0.75);
+
+    const merged = mergeContext({ static: half }, { perCall: half });
+
+    expect(jsonByteLength(merged)).toBeLessThanOrEqual(MAX_CONTEXT_BYTES);
+  });
+
+  it("keeps the most specific layer when it has to drop something", () => {
+    const bulky = "x".repeat(MAX_CONTEXT_BYTES * 0.75);
+
+    const merged = mergeContext(
+      { collected: bulky },
+      { static: bulky },
+      { perCall: "kept" },
+    );
+
+    expect(merged?.perCall).toBe("kept");
+    expect(merged?.["[truncated]"]).toBe(true);
+    expect(jsonByteLength(merged)).toBeLessThanOrEqual(MAX_CONTEXT_BYTES);
+  });
+
+  it("leaves a merge that already fits exactly as it was", () => {
+    expect(mergeContext({ a: 1 }, { b: 2 })).toEqual({ a: 1, b: 2 });
   });
 });

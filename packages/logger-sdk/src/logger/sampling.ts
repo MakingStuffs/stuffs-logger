@@ -5,7 +5,7 @@ import type { LogLevel } from "../contract";
  * Per-level sampling, so a chatty `debug` call site can be throttled without
  * losing a single `error`.
  *
- * Sampling is evaluated before an event is normalised: a discarded event costs
+ * Sampling is evaluated before an event is normalized: a discarded event costs
  * one comparison and one random number, never a walk of its context.
  */
 

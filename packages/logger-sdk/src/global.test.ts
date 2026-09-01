@@ -21,7 +21,7 @@ describe("the global build in a host with no document", () => {
     }).not.toThrow();
   });
 
-  it("resolves flush even when it was never initialised", async () => {
+  it("resolves flush even when it was never initialized", async () => {
     const global = await import("./global");
 
     await expect(global.flush()).resolves.toBeUndefined();

@@ -77,7 +77,7 @@ export const error = forward("error");
 /** Records a fatal-level event. No-op until {@link init} has been called. */
 export const fatal = forward("fatal");
 
-/** Sends everything queued. Resolves immediately when uninitialised. */
+/** Sends everything queued. Resolves immediately when uninitialized. */
 export function flush(): Promise<void> {
   return current?.flush() ?? Promise.resolve();
 }

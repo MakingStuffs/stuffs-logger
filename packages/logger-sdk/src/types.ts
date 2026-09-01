@@ -6,11 +6,11 @@ import type {
   LogSource,
 } from "./contract";
 
-/** A JSON object, the shape every event `context` is normalised into. */
+/** A JSON object, the shape every event `context` is normalized into. */
 export type JsonObject = { [key: string]: JsonValue };
 
 /**
- * Context as a CALLER supplies it: anything at all. It is normalised, redacted
+ * Context as a CALLER supplies it: anything at all. It is normalized, redacted
  * and bounded before it leaves the process, so no constraint is imposed here —
  * a logging call must never fail to compile because of the shape of a value
  * someone wanted to look at.
@@ -91,7 +91,15 @@ export interface Transport {
   send(request: TransportRequest): Promise<TransportOutcome>;
 }
 
-/** Everything `createLogger` accepts. Only `apiKey` has no useful default. */
+/**
+ * Everything `createLogger` accepts. Only `apiKey` has no useful default.
+ *
+ * There is deliberately NO `app` option. Which application a batch belongs to
+ * is derived server-side from the verified ingest key, so it is not a field a
+ * caller can set: a client that could name its own application could write
+ * events into someone else's. The key identifies the application; the SDK
+ * never states it.
+ */
 export interface LoggerOptions {
   /**
    * The ingest key. A `jfl_pub_…` key in the browser, a `jfl_sec_…` key in
@@ -103,6 +111,9 @@ export interface LoggerOptions {
   /**
    * Ingest origin or full ingest URL. Defaults to the current origin in the
    * browser and `JF_LOGGER_ENDPOINT` under Node.
+   *
+   * Must be `https:` unless the host is the loopback one — the ingest key
+   * travels in a header on every batch.
    */
   endpoint?: string;
   /** Defaults to `NODE_ENV` under Node, otherwise `"production"`. */

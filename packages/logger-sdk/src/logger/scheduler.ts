@@ -2,7 +2,7 @@
  * Deferral primitives, so no SDK work ever runs on the caller's stack.
  *
  * A logging call must return immediately: it queues an event and gets out of
- * the way. Serialisation and the network happen later, at the lowest priority
+ * the way. Serialization and the network happen later, at the lowest priority
  * the host will give us.
  */
 

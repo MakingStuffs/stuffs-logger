@@ -37,6 +37,27 @@ describe("resolveEndpoint", () => {
     expect(resolveEndpoint("file:///etc/passwd")).toBeUndefined();
   });
 
+  it("refuses a cleartext http endpoint, which would publish the key", () => {
+    expect(resolveEndpoint("http://logs.example.com")).toBeUndefined();
+    expect(
+      resolveEndpoint(`http://logs.example.com${INGEST_PATH}`),
+    ).toBeUndefined();
+  });
+
+  it("allows http on the loopback host, where local development lives", () => {
+    expect(resolveEndpoint("http://localhost:3000")).toBe(
+      `http://localhost:3000${INGEST_PATH}`,
+    );
+    expect(resolveEndpoint("http://127.0.0.1:3000")).toBe(
+      `http://127.0.0.1:3000${INGEST_PATH}`,
+    );
+  });
+
+  it("does not mistake a lookalike host for the loopback one", () => {
+    expect(resolveEndpoint("http://localhost.evil.com")).toBeUndefined();
+    expect(resolveEndpoint("http://127.0.0.1.evil.com")).toBeUndefined();
+  });
+
   it("refuses a value that is not a url", () => {
     expect(resolveEndpoint("logs.example.com")).toBeUndefined();
   });

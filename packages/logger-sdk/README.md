@@ -6,16 +6,17 @@ matter what goes wrong.
 
 - **Drop-in.** `captureConsole()` forwards every `console.*` call to the logger
   and still prints it. No call sites change.
-- **Cheap.** Logging queues an event and returns. Batching, serialisation and
+- **Cheap.** Logging queues an event and returns. Batching, serialization and
   the network all happen off the hot path, on an idle callback.
 - **Bounded.** A fixed-length queue, drop-oldest on overflow, capped retry
   backoff. An offline tab never grows.
-- **Safe.** Secret-shaped values are redacted before an event is queued, a
-  `jfl_sec_` key is refused outright in the browser, and no cookies are ever
-  sent to the ingest endpoint.
+- **Safe.** Secret-shaped context keys and url parameters are redacted before
+  an event is queued, a `jfl_sec_` key is refused outright in the browser, a
+  cleartext `http:` endpoint is refused off `localhost`, and no cookies are
+  ever sent to the ingest endpoint.
 - **Small.** No runtime dependencies. Measured with `pnpm --filter @jf-logger/sdk size`:
-  5.40 KB gzipped for `createLogger` alone, 6.17 KB for the whole browser entry
-  point, 6.39 KB for the drop-in `<script>` build.
+  6.17 KB gzipped for `createLogger` alone, 6.95 KB for the whole browser entry
+  point, 7.16 KB for the drop-in `<script>` build.
 
 ---
 
@@ -36,6 +37,15 @@ The SDK enforces this itself: a secret key configured in the browser, or a
 public key configured in Node, produces an inert logger and an `onError`
 diagnostic rather than a request. Ingest would refuse both anyway; failing on
 the client means you find out while you are building, not in production.
+
+**There is no `app` option, deliberately.** Which application a batch belongs
+to is derived server-side from the verified key. Letting a caller name its own
+application would let anyone holding one key write events into another
+application; the key is the identity, so the SDK never states it.
+
+The endpoint must be `https:` unless its host is `localhost` or `127.0.0.1`.
+An `http:` endpoint anywhere else is refused with an `onError` diagnostic,
+because the key is sent as a request header on every batch.
 
 ---
 
@@ -249,6 +259,22 @@ about twenty more — has its value replaced with `"[redacted]"` before the even
 is queued. Matching ignores case and punctuation, so `API_KEY`, `api-key`,
 `apiKey` and `x-api-key` are all covered.
 
+The same matching runs over the captured `url`: query and fragment parameters
+whose NAME looks secret are replaced, and credentials embedded in the authority
+(`https://user:password@host`) are stripped. A password-reset link or an OAuth
+callback is therefore stored without its token.
+
+```
+https://app.example.com/reset?token=abc123&step=2
+https://app.example.com/reset?token=[redacted]&step=2
+```
+
+**What redaction does not cover.** `message`, `error.message` and `error.stack`
+are sent as written. A token interpolated into a log message is shipped and
+stored: scanning free text for secrets costs a pass over every character on
+your hot path and its false positives silently corrupt the text you are reading
+the log to understand. Keep credentials out of message strings.
+
 ```ts
 createLogger({
   apiKey,
@@ -284,8 +310,16 @@ createLogger({
 document becomes hidden, using `fetch(…, { keepalive: true })`. It is _not_
 `navigator.sendBeacon`: a beacon cannot set custom headers, and ingest
 authenticates on `x-jf-key`, so a beacon would always arrive unauthenticated.
-Keepalive requests are capped by the browser at 64 KB, so an unload batch is
-trimmed to fit and the remainder stays queued.
+Browsers cap the combined body of in-flight keepalive requests at 64 KB, so the
+unload path sends exactly one request, trimmed to fit, and the remainder stays
+queued for the next page view. An unload flush never waits behind an ordinary
+flush that is already in the air — that is precisely the case a slow network
+produces, and waiting would lose the batch.
+
+**Body limits.** Batches are measured in UTF-8 bytes, not UTF-16 code units, so
+a batch of CJK — three bytes per code unit — is split into as many requests as
+it needs rather than being sent over the limit and refused. Splitting costs a
+request; being refused would cost the events.
 
 **Failure.** A failed send is retried with exponential backoff capped at 60
 seconds, keeping the events queued. After three consecutive failures the SDK

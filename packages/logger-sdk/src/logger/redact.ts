@@ -2,22 +2,34 @@ import { DEFAULT_REDACTION_REPLACEMENT } from "../defaults";
 import type { RedactionOptions, RedactionPattern } from "../types";
 
 /**
- * Key-shaped secret detection, applied while a context object is normalised.
+ * Key-shaped secret detection, applied while a context object is normalized.
  *
  * The SDK ships credentials, request headers and form state to a server that
- * stores them and renders them in a dashboard. Anything that looks like a
- * secret is replaced BEFORE it is queued, so a secret never exists inside the
- * SDK's buffers, never reaches the network, and cannot be recovered from the
- * dashboard afterwards.
+ * stores them and renders them in a dashboard, so a secret-shaped value is
+ * replaced BEFORE the event is queued.
  *
- * Keys, not values: value-shaped detection (entropy, JWT regexes) is a
- * per-character cost on the caller's hot path with a false-positive rate that
- * silently corrupts legitimate data. Key matching is O(key length) and its
+ * WHAT THIS COVERS, precisely — the guarantee is narrower than "no secret ever
+ * leaves the process", and reading it as the wider claim is how a token ends
+ * up in a log store:
+ *
+ * - Context object KEYS, at any depth, in the collected, static and per-call
+ *   layers (see `./sanitize`).
+ * - Query and fragment PARAMETER NAMES in the captured url, plus credentials
+ *   embedded in its authority (see `./redact-url`).
+ *
+ * What it does NOT cover: `message`, `error.message` and `error.stack` are
+ * sent verbatim. A caller who interpolates a token into a log message ships
+ * that token. Free-text scanning is a per-character cost on the caller's hot
+ * path with a false-positive rate that silently corrupts the very text someone
+ * is reading a log to understand; the server applies its own pass over stored
+ * text instead.
+ *
+ * Keys, not values, for the same reason: key matching is O(key length) and its
  * failure mode is a redacted field someone can rename.
  */
 
 /**
- * Secret-shaped key fragments, matched against a normalised key.
+ * Secret-shaped key fragments, matched against a normalized key.
  *
  * Deliberately broad — a field wrongly redacted is an inconvenience, a
  * credential in a log store is an incident.
@@ -54,11 +66,11 @@ export const DEFAULT_REDACTION_KEYS: readonly string[] = [
 /**
  * Reduces a key to comparable form: lower case, punctuation removed.
  *
- * `API_KEY`, `api-key`, `apiKey` and `x-api-key` all normalise to a string
+ * `API_KEY`, `api-key`, `apiKey` and `x-api-key` all normalize to a string
  * containing `apikey`, so one pattern covers every casing convention a caller
  * might use.
  */
-function normaliseKey(key: string): string {
+function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
@@ -79,8 +91,8 @@ function compile(patterns: readonly RedactionPattern[]): {
 
   for (const pattern of patterns) {
     if (typeof pattern === "string") {
-      const normalised = normaliseKey(pattern);
-      if (normalised.length > 0) literals.push(normalised);
+      const normalized = normalizeKey(pattern);
+      if (normalized.length > 0) literals.push(normalized);
       continue;
     }
     expressions.push(pattern);
@@ -116,8 +128,8 @@ export function createRedactor(
     shouldRedact(key: string): boolean {
       if (expressions.some((expression) => expression.test(key))) return true;
 
-      const normalised = normaliseKey(key);
-      return literals.some((literal) => normalised.includes(literal));
+      const normalized = normalizeKey(key);
+      return literals.some((literal) => normalized.includes(literal));
     },
   };
 }

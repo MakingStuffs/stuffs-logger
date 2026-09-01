@@ -1,4 +1,4 @@
-import { INGEST_KEY_HEADER, MAX_BODY_BYTES } from "../contract";
+import { INGEST_KEY_HEADER, jsonByteLength, MAX_BODY_BYTES } from "../contract";
 import { MAX_KEEPALIVE_BODY_BYTES } from "../defaults";
 import type {
   DiagnosticHandler,
@@ -120,11 +120,17 @@ export function createHttpTransport(options: HttpTransportOptions): Transport {
         body = JSON.stringify(batch);
       } catch (error) {
         report(error, "transport.serialize");
-        return { kind: "dropped", reason: "batch could not be serialised" };
+        return { kind: "dropped", reason: "batch could not be serialized" };
       }
 
+      // Measured in UTF-8 BYTES, which is what the server measures and what
+      // the browser's keepalive cap counts. A UTF-16 length would let a batch
+      // of CJK text through at three times the real size, to be refused with a
+      // `413` this transport can only read as "condemned". The caller sizes
+      // batches to the same budget, so reaching this guard means one event
+      // alone is too big — the last resort, not the routine path.
       const limit = urgent ? MAX_KEEPALIVE_BODY_BYTES : MAX_BODY_BYTES;
-      if (body.length > limit) {
+      if (jsonByteLength(batch) > limit) {
         return { kind: "dropped", reason: "batch exceeded the body limit" };
       }
 

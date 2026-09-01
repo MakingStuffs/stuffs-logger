@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { INGEST_KEY_HEADER } from "../contract";
+import { INGEST_KEY_HEADER, MAX_BODY_BYTES } from "../contract";
 import { SECRET_KEY } from "../testing/fixtures";
 import { createHttpTransport } from "./transport";
 import type { IngestBatch } from "../contract";
@@ -142,6 +142,50 @@ describe("createHttpTransport", () => {
 
     expect(outcome).toEqual({ kind: "retry" });
     expect(report).toHaveBeenCalled();
+  });
+
+  it("measures the body in UTF-8 bytes, not UTF-16 code units", async () => {
+    // 100,000 code units of CJK is 300,000 UTF-8 bytes — over the server's
+    // limit, and the server is the one that measures bytes.
+    const batch = makeBatch();
+    batch.events[0] = {
+      ...makeBatch().events[0]!,
+      message: "\u6f22".repeat(100_000),
+    };
+
+    const outcome = await transport().send({ batch, urgent: false });
+
+    expect(outcome.kind).toBe("dropped");
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("sends multi-byte content that fits the byte limit", async () => {
+    const batch = makeBatch();
+    batch.events[0] = {
+      ...makeBatch().events[0]!,
+      message: "\u6f22".repeat(20_000),
+    };
+
+    const outcome = await transport().send({ batch, urgent: false });
+
+    expect(outcome.kind).toBe("sent");
+    const body = request.mock.calls[0]?.[1]?.body as string;
+    expect(new TextEncoder().encode(body).length).toBeLessThanOrEqual(
+      MAX_BODY_BYTES,
+    );
+  });
+
+  it("refuses an unload batch whose multi-byte content busts the keepalive budget", async () => {
+    const batch = makeBatch();
+    batch.events[0] = {
+      ...makeBatch().events[0]!,
+      message: "\u6f22".repeat(30_000),
+    };
+
+    const outcome = await transport().send({ batch, urgent: true });
+
+    expect(outcome.kind).toBe("dropped");
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("refuses an unload batch too large for the keepalive budget", async () => {

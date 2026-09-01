@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MAX_EVENTS_PER_BATCH } from "../contract";
+import {
+  jsonByteLength,
+  MAX_BODY_BYTES,
+  MAX_EVENTS_PER_BATCH,
+} from "../contract";
+import { MAX_KEEPALIVE_BODY_BYTES } from "../defaults";
 import type { ContextCollector } from "../context/collector";
 import {
   createFakeTransport,
@@ -10,7 +15,13 @@ import {
 } from "../testing/fixtures";
 import type { FakeTransport } from "../testing/fixtures";
 import { createLoggerWith } from "./create-logger";
-import type { Logger, LoggerOptions } from "../types";
+import { createHttpTransport } from "./transport";
+import type {
+  Logger,
+  LoggerOptions,
+  Transport,
+  TransportOutcome,
+} from "../types";
 
 const FLUSH_INTERVAL_MS = 5000;
 
@@ -28,6 +39,48 @@ function makeLogger(
     },
     createTestAdapter(collector ? { createCollector: () => collector } : {}),
   );
+}
+
+/** A message of roughly `bytes` UTF-8 bytes, written in three-byte CJK. */
+function multiByteMessage(bytes: number): string {
+  return "\u6f22".repeat(Math.ceil(bytes / 3));
+}
+
+interface GatedTransport extends Transport {
+  /** One entry per send, in order. */
+  readonly sends: { urgent: boolean; events: number }[];
+  /** Lets the ordinary send that is currently blocked finish. */
+  release(): void;
+}
+
+/**
+ * A transport whose ORDINARY sends hang until released, while urgent sends
+ * resolve at once — the shape of a slow network during a navigation.
+ */
+function createGatedTransport(): GatedTransport {
+  const sends: { urgent: boolean; events: number }[] = [];
+  let unblock: (() => void) | undefined;
+
+  return {
+    sends,
+    release(): void {
+      unblock?.();
+      unblock = undefined;
+    },
+    send({ batch, urgent }): Promise<TransportOutcome> {
+      sends.push({ urgent, events: batch.events.length });
+      const outcome: TransportOutcome = {
+        kind: "sent",
+        accepted: batch.events.length,
+      };
+      if (urgent) return Promise.resolve(outcome);
+      return new Promise<TransportOutcome>((resolve) => {
+        unblock = () => {
+          resolve(outcome);
+        };
+      });
+    },
+  };
 }
 
 describe("createLoggerWith", () => {
@@ -272,6 +325,27 @@ describe("createLoggerWith", () => {
       expect(transport.batches[0]?.sessionId).toBe("sess-9");
     });
 
+    it("redacts secret-shaped query parameters out of the captured url", async () => {
+      const transport = createFakeTransport();
+      const logger = makeLogger(
+        transport,
+        {},
+        {
+          sessionId: () => undefined,
+          collect: () => ({
+            url: "https://app.example.com/reset?token=abc123&step=2",
+          }),
+        },
+      );
+
+      logger.info("password reset opened");
+      await logger.flush();
+
+      expect(transport.events[0]?.url).toBe(
+        "https://app.example.com/reset?token=[redacted]&step=2",
+      );
+    });
+
     it("replaces the static context on request", async () => {
       const transport = createFakeTransport();
       const logger = makeLogger(transport, { context: { build: 1 } });
@@ -414,6 +488,128 @@ describe("createLoggerWith", () => {
       logger.info("ignored");
       await logger.flush();
       expect(transport.batches).toHaveLength(1);
+    });
+  });
+
+  describe("body limits", () => {
+    it("splits a multi-byte batch over the body limit instead of losing it", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(new Response(null, { status: 202 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const logger = createLoggerWith(
+        {
+          apiKey: SECRET_KEY,
+          endpoint: "https://logs.example.com",
+          batchSize: 100,
+          transport: createHttpTransport({
+            endpoint: "https://logs.example.com/api/v1/ingest",
+            apiKey: SECRET_KEY,
+            report: vi.fn(),
+          }),
+        },
+        createTestAdapter(),
+      );
+
+      for (let index = 0; index < 25; index += 1) {
+        logger.info(multiByteMessage(24_000));
+      }
+      await logger.flush();
+
+      const bodies = fetchMock.mock.calls.map(
+        (call) => (call[1] as { body: string }).body,
+      );
+      expect(bodies.length).toBeGreaterThan(1);
+      let delivered = 0;
+      for (const body of bodies) {
+        expect(new TextEncoder().encode(body).length).toBeLessThanOrEqual(
+          MAX_BODY_BYTES,
+        );
+        delivered += (JSON.parse(body) as { events: unknown[] }).events.length;
+      }
+      expect(delivered).toBe(25);
+      expect(logger.stats.dropped).toBe(0);
+      vi.unstubAllGlobals();
+    });
+
+    it("keeps every batch it hands the transport within the body limit", async () => {
+      const transport = createFakeTransport();
+      const logger = makeLogger(transport, { batchSize: 100 });
+
+      for (let index = 0; index < 25; index += 1) {
+        logger.info(multiByteMessage(24_000));
+      }
+      await logger.flush();
+
+      for (const batch of transport.batches) {
+        expect(jsonByteLength(batch)).toBeLessThanOrEqual(MAX_BODY_BYTES);
+      }
+      expect(transport.events).toHaveLength(25);
+    });
+
+    it("trims an oversized unload batch and requeues the remainder", async () => {
+      const transport = createFakeTransport();
+      let teardown: ((urgent: boolean) => void) | undefined;
+      const logger = createLoggerWith(
+        {
+          apiKey: SECRET_KEY,
+          transport,
+          batchSize: 100,
+          endpoint: "https://logs.example.com",
+        },
+        createTestAdapter({
+          installLifecycle: (flush) => {
+            teardown = flush;
+            return () => {};
+          },
+        }),
+      );
+
+      for (let index = 0; index < 4; index += 1) {
+        logger.info(multiByteMessage(24_000));
+      }
+      teardown?.(true);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(transport.batches).toHaveLength(1);
+      expect(transport.events.length).toBeLessThan(4);
+      expect(jsonByteLength(transport.batches[0])).toBeLessThanOrEqual(
+        MAX_KEEPALIVE_BODY_BYTES,
+      );
+      expect(logger.stats.queued).toBe(4 - transport.events.length);
+    });
+
+    it("sends the unload batch even while an ordinary flush is still in flight", async () => {
+      const transport = createGatedTransport();
+      let teardown: ((urgent: boolean) => void) | undefined;
+      const logger = createLoggerWith(
+        {
+          apiKey: SECRET_KEY,
+          transport,
+          batchSize: 100,
+          endpoint: "https://logs.example.com",
+        },
+        createTestAdapter({
+          installLifecycle: (flush) => {
+            teardown = flush;
+            return () => {};
+          },
+        }),
+      );
+
+      logger.info("ordinary");
+      void logger.flush();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(transport.sends).toHaveLength(1);
+
+      logger.info("last words");
+      teardown?.(true);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(transport.sends[1]).toEqual({ urgent: true, events: 1 });
+
+      transport.release();
+      await vi.advanceTimersByTimeAsync(0);
     });
   });
 

@@ -60,7 +60,7 @@ export const MIN_RETRY_DELAY_MS = 1000;
 export const MAX_RETRY_DELAY_MS = 60000;
 
 /**
- * Node budget for normalising one `context` value.
+ * Node budget for normalizing one `context` value.
  *
  * The byte budget alone is not enough: a wide, shallow object of tiny keys can
  * cost a lot of walking before it reaches the byte limit, and this runs on the
@@ -71,5 +71,5 @@ export const MAX_CONTEXT_NODES = 512;
 /** Where the browser session id is persisted. */
 export const SESSION_STORAGE_KEY = "jf-logger.session-id";
 
-/** Stands in for an event whose message normalised to nothing. */
+/** Stands in for an event whose message normalized to nothing. */
 export const EMPTY_MESSAGE_PLACEHOLDER = "(empty)";

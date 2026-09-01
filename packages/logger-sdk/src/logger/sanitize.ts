@@ -26,7 +26,7 @@ import type { Redactor } from "./redact";
  *
  * Every function here is total — it returns a value for every input, never
  * throws, and never runs unbounded. The budgets are enforced DURING the walk
- * rather than by serialising and measuring afterwards, because the walk is on
+ * rather than by serializing and measuring afterwards, because the walk is on
  * the caller's hot path and a rejected 10 MB object must cost the budget, not
  * the object.
  */
@@ -108,26 +108,26 @@ function stringifyScalar(value: unknown): string {
  * toMessage(new Error("boom")); // "boom"
  */
 export function toMessage(value: unknown): string {
-  if (typeof value === "string") return finaliseMessage(value);
+  if (typeof value === "string") return finalizeMessage(value);
   if (isErrorLike(value)) {
     const message = value.message;
-    if (typeof message === "string") return finaliseMessage(message);
+    if (typeof message === "string") return finalizeMessage(message);
   }
   if (value === null || value === undefined) {
     return EMPTY_MESSAGE_PLACEHOLDER;
   }
   if (typeof value === "object") {
     try {
-      const serialised = JSON.stringify(value);
-      if (typeof serialised === "string") return finaliseMessage(serialised);
+      const serialized = JSON.stringify(value);
+      if (typeof serialized === "string") return finalizeMessage(serialized);
     } catch {
-      // Circular or otherwise unserialisable — fall through to `String`.
+      // Circular or otherwise unserializable — fall through to `String`.
     }
   }
-  return finaliseMessage(stringifyScalar(value));
+  return finalizeMessage(stringifyScalar(value));
 }
 
-function finaliseMessage(value: string): string {
+function finalizeMessage(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0) return EMPTY_MESSAGE_PLACEHOLDER;
   return clampString(trimmed, MAX_MESSAGE_LENGTH);
@@ -210,8 +210,8 @@ function walk(
     return iso === undefined ? TRUNCATION_MARKER : iso;
   }
   if (isErrorLike(container)) {
-    const serialised = serializeError(container);
-    return serialised === undefined ? TRUNCATION_MARKER : { ...serialised };
+    const serialized = serializeError(container);
+    return serialized === undefined ? TRUNCATION_MARKER : { ...serialized };
   }
 
   seen.add(container);
@@ -299,7 +299,7 @@ function walkObject(
 }
 
 /**
- * Normalises a caller's context bag into a bounded, redacted JSON object.
+ * Normalizes a caller's context bag into a bounded, redacted JSON object.
  *
  * @param value - The caller's context, of any shape.
  * @param redactor - Applied to every key; `undefined` disables redaction.
@@ -320,10 +320,10 @@ export function normalizeContext(
     nodes: MAX_CONTEXT_NODES,
   };
 
-  const normalised = walk(value, 0, budget, new Set<object>(), redactor);
-  if (typeof normalised !== "object" || normalised === null) return undefined;
+  const normalized = walk(value, 0, budget, new Set<object>(), redactor);
+  if (typeof normalized !== "object" || normalized === null) return undefined;
 
-  const result = Array.isArray(normalised) ? { value: normalised } : normalised;
+  const result = Array.isArray(normalized) ? { value: normalized } : normalized;
   if (Object.keys(result).length === 0) return undefined;
 
   const unitsUsed = MAX_CONTEXT_BYTES - budget.chars;
@@ -342,8 +342,17 @@ export function normalizeContext(
 /**
  * Merges context layers, most specific last.
  *
- * @param layers - Already-normalised objects, least specific first.
- * @returns The merged object, or `undefined` when every layer was empty.
+ * Each layer was budgeted against the FULL context limit on its own, so a
+ * large `setContext` plus a large per-call bag can merge into an object the
+ * server refuses — invisibly, because the SDK does not read the ingest
+ * response. The merged result is therefore re-measured, and trimmed when it
+ * does not fit.
+ *
+ * @param layers - Already-normalized objects, least specific first.
+ * @returns The merged object, within the contract's byte limit, or `undefined`
+ *   when every layer was empty.
+ * @example
+ * mergeContext({ a: 1, b: 1 }, { b: 2 }); // { a: 1, b: 2 }
  */
 export function mergeContext(
   ...layers: readonly (JsonObject | undefined)[]
@@ -355,5 +364,47 @@ export function mergeContext(
     merged = merged ? { ...merged, ...layer } : layer;
   }
 
-  return merged;
+  if (merged === undefined) return undefined;
+  if (jsonByteLength(merged) <= MAX_CONTEXT_BYTES) return merged;
+
+  return mergeWithinBudget(layers);
+}
+
+/**
+ * Re-merges layers most-specific-first, stopping at the byte limit.
+ *
+ * The specific layer wins the budget as well as the key: a per-call bag is the
+ * reason this event was logged, while the collected and static layers repeat
+ * on every event.
+ */
+function mergeWithinBudget(
+  layers: readonly (JsonObject | undefined)[],
+): JsonObject {
+  const result: JsonObject = {};
+  const seen = new Set<string>();
+  let used = STRUCTURAL_HEADROOM + TRUNCATION_MARKER.length + STRUCTURAL_COST;
+  let truncated = false;
+
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    const layer = layers[index];
+    if (!layer) continue;
+
+    for (const [key, value] of Object.entries(layer)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const cost =
+        jsonByteLength(value) + jsonByteLength(key) + STRUCTURAL_COST;
+      if (used + cost > MAX_CONTEXT_BYTES) {
+        truncated = true;
+        continue;
+      }
+
+      used += cost;
+      result[key] = value;
+    }
+  }
+
+  if (truncated) result[TRUNCATION_MARKER] = true;
+  return result;
 }
