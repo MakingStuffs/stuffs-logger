@@ -1,104 +1,111 @@
 /**
- * The CORS preflight's answer, cached and throttled.
+ * The CORS preflight's answer, served from a snapshot of the whole registry.
  *
  * `OPTIONS /api/v1/ingest` is UNAUTHENTICATED by construction: a browser sends
  * no custom headers on a preflight, so there is no key to verify. Answering it
  * with a database query per request makes an anonymous caller's cheapest
- * possible request into work for our Postgres, and the query is a containment
- * test over an array column.
+ * possible request into work for our Postgres.
  *
- * Two bounds, in front of the lookup:
+ * So the preflight does not ask about an origin at all. The full set of
+ * registered origins is loaded ONCE per TTL and every preflight in that window
+ * is answered from memory — which makes the cost of the unauthenticated path
+ * independent of who calls it, or how often, or with how many distinct
+ * `Origin` values. A per-origin cache could not do that: an attacker spraying
+ * distinct origins misses it on every request, and any budget protecting the
+ * lookups behind it is a budget they can spend on everyone else's behalf.
  *
- *  - **A short TTL cache.** The registered-origin set changes when someone
- *    edits a key in the dashboard, which is rare; a minute of staleness costs
- *    a developer one minute and costs an attacker their amplifier. Cached
- *    answers are per instance and grant nothing on their own — the POST still
- *    verifies the key and re-checks the origin against THAT key's own list.
- *  - **A lookup budget.** Once the uncached lookups for a window are spent,
- *    unknown origins are refused without touching the database at all. Failing
- *    closed costs a legitimate new origin one preflight retry; failing open
- *    would hand the endpoint straight back to the flood.
+ * The set is small by construction — live PUBLIC keys, each capped at
+ * `MAX_ALLOWED_ORIGINS` (20) entries by `lib/apps/actions` — so holding all of
+ * it is cheaper than the map of per-origin answers it replaces.
+ *
+ * A minute of staleness costs a developer who has just added an origin one
+ * minute; the snapshot grants nothing on its own, because the POST still
+ * verifies the key and re-checks the origin against THAT key's own list.
  */
 
-/** How long an answer stays usable, in milliseconds. */
-export const ORIGIN_CACHE_TTL_MS = 60_000;
+/** How long a snapshot answers preflights before it is refreshed. */
+export const ORIGIN_SNAPSHOT_TTL_MS = 60_000;
 
-/** Distinct origins cached per instance, so the map cannot grow unbounded. */
-export const ORIGIN_CACHE_MAX_ENTRIES = 1_000;
+/**
+ * How long to wait after a failed refresh before trying again.
+ *
+ * Shorter than the TTL so a blip recovers quickly, long enough that an
+ * unreachable database cannot be turned back into a query per preflight.
+ */
+export const ORIGIN_SNAPSHOT_RETRY_MS = 5_000;
 
-/** Uncached lookups permitted per window, across all origins. */
-export const ORIGIN_LOOKUP_BUDGET = 60;
+/** Loads every origin registered by a live public key. */
+export type RegisteredOriginLoader = () => Promise<readonly string[]>;
 
-/** Length of the lookup budget's window, in milliseconds. */
-export const ORIGIN_LOOKUP_WINDOW_MS = 60_000;
-
-interface CacheEntry {
-  registered: boolean;
+interface OriginSnapshot {
+  origins: ReadonlySet<string>;
   expiresAt: number;
 }
 
-const cache = new Map<string, CacheEntry>();
+let snapshot: OriginSnapshot | null = null;
 
-const budget = { windowStartedAt: 0, spent: 0 };
+/** The refresh in flight, so concurrent preflights share one query. */
+let refresh: Promise<void> | null = null;
 
-/** Whether an uncached lookup may be issued, counting it if so. */
-function claimLookup(now: number): boolean {
-  if (now - budget.windowStartedAt >= ORIGIN_LOOKUP_WINDOW_MS) {
-    budget.windowStartedAt = now;
-    budget.spent = 0;
-  }
+function refreshSnapshot(
+  loadOrigins: RegisteredOriginLoader,
+  now: number,
+): Promise<void> {
+  if (refresh !== null) return refresh;
 
-  if (budget.spent >= ORIGIN_LOOKUP_BUDGET) return false;
+  const pending = loadOrigins()
+    .then((origins) => {
+      snapshot = {
+        origins: new Set(origins),
+        expiresAt: now + ORIGIN_SNAPSHOT_TTL_MS,
+      };
+    })
+    .catch((error: unknown) => {
+      // Fails closed and stays quiet: the previous snapshot keeps answering if
+      // there is one — it can only grant origins that WERE registered — and
+      // there being none means every origin is refused until the next attempt.
+      console.warn(
+        "[ingest] could not refresh the registered-origin snapshot:",
+        error,
+      );
 
-  budget.spent += 1;
-  return true;
-}
+      snapshot = {
+        origins: snapshot?.origins ?? new Set<string>(),
+        expiresAt: now + ORIGIN_SNAPSHOT_RETRY_MS,
+      };
+    })
+    .finally(() => {
+      if (refresh === pending) refresh = null;
+    });
 
-/** Drops expired entries, then the oldest, once the cache is full. */
-function evictIfNeeded(now: number): void {
-  if (cache.size < ORIGIN_CACHE_MAX_ENTRIES) return;
-
-  for (const [origin, entry] of cache) {
-    if (entry.expiresAt <= now) cache.delete(origin);
-  }
-
-  while (cache.size >= ORIGIN_CACHE_MAX_ENTRIES) {
-    const oldest = cache.keys().next();
-    if (oldest.done) break;
-    cache.delete(oldest.value);
-  }
+  refresh = pending;
+  return pending;
 }
 
 /**
- * Whether any live public key registers this origin, from cache where possible.
+ * Whether any live public key registers this origin.
  *
  * @param origin - The `Origin` header from the preflight, untrusted.
- * @param lookup - The authoritative check, called only on a cache miss with
- *   budget left.
+ * @param loadOrigins - Loads the whole registered set; called at most once per
+ *   TTL, never once per origin.
  * @param now - Epoch milliseconds; injected so tests need no real clock.
  * @returns Whether to echo the origin back as allowed.
  */
 export async function isOriginRegisteredCached(
   origin: string,
-  lookup: (origin: string) => Promise<boolean>,
+  loadOrigins: RegisteredOriginLoader,
   now: number = Date.now(),
 ): Promise<boolean> {
-  const cached = cache.get(origin);
-  if (cached !== undefined && cached.expiresAt > now) return cached.registered;
+  const current = snapshot;
+  if (current === null || current.expiresAt <= now) {
+    await refreshSnapshot(loadOrigins, now);
+  }
 
-  if (!claimLookup(now)) return false;
-
-  const registered = await lookup(origin);
-
-  evictIfNeeded(now);
-  cache.set(origin, { registered, expiresAt: now + ORIGIN_CACHE_TTL_MS });
-
-  return registered;
+  return snapshot?.origins.has(origin) ?? false;
 }
 
-/** Clears the cache and budget. Test-only seam; never called by app code. */
-export function resetOriginRegistryCache(): void {
-  cache.clear();
-  budget.windowStartedAt = 0;
-  budget.spent = 0;
+/** Drops the snapshot. Test-only seam; never called by app code. */
+export function resetOriginRegistrySnapshot(): void {
+  snapshot = null;
+  refresh = null;
 }

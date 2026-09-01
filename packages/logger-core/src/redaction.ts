@@ -1,4 +1,5 @@
 import { MAX_CONTEXT_DEPTH } from "./constants";
+import { setJsonEntry } from "./json";
 import type { JsonValue } from "./json";
 
 /**
@@ -6,7 +7,9 @@ import type { JsonValue } from "./json";
  *
  * Both ends redact, and they redact against the SAME list for the same reason
  * every other limit lives in this package: two lists would drift, and the
- * drift would be silent.
+ * drift would be silent. This module is that list: the SDK re-exports the
+ * matcher below through its `src/contract.ts` seam rather than carrying a copy
+ * of it, so a key added here is redacted in the browser too.
  *
  * The two ends are not the same control, though. The SDK redacts so a secret
  * never enters its buffers and never reaches the network at all; that pass is
@@ -198,9 +201,13 @@ function redactAtDepth(
 
   const result: Record<string, JsonValue> = {};
   for (const [key, entry] of Object.entries(value)) {
-    result[key] = redactor.shouldRedact(key)
-      ? redactor.replacement
-      : redactAtDepth(entry, redactor, depth + 1);
+    setJsonEntry(
+      result,
+      key,
+      redactor.shouldRedact(key)
+        ? redactor.replacement
+        : redactAtDepth(entry, redactor, depth + 1),
+    );
   }
 
   return result;

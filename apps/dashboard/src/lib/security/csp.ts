@@ -20,7 +20,7 @@ import { PORTAL_URL } from "@/constants/environment";
  *  1. Point `report-uri`/`report-to` at a collector, or read the violations
  *     from the browser console on each route.
  *  2. Exercise every page, including the key-management dialogs.
- *  3. When the reports are clean, have `middleware.ts` also set the enforcing
+ *  3. When the reports are clean, have `proxy.ts` also set the enforcing
  *     `Content-Security-Policy` header with the SAME string. Nothing else
  *     changes: the policy, the nonce plumbing and the header value are already
  *     what enforcement would use.
@@ -36,7 +36,7 @@ const NONCE_BYTES = 16;
 /**
  * A fresh per-response nonce.
  *
- * Uses Web Crypto, which exists in both the Edge and Node middleware runtimes.
+ * Uses Web Crypto, which is present in both runtimes a proxy file can run in.
  * A nonce that repeats across responses is a nonce an injected script can
  * predict, so it is generated per request and never cached.
  *

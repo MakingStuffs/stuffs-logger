@@ -6,6 +6,7 @@ import {
   normaliseRedactionKey,
   redactJson,
 } from "./redaction";
+import type { JsonValue } from "./json";
 
 describe("normaliseRedactionKey", () => {
   it.each([
@@ -105,6 +106,29 @@ describe("redactJson", () => {
     const redacted = redactJson({ password: "hunter2" });
 
     expect(Object.keys(redacted as object)).toEqual(["password"]);
+  });
+
+  it("keeps a literal __proto__ key rather than losing it", () => {
+    // JSON.parse is how such a key reaches the server: it creates an own
+    // property, where plain assignment would run the prototype setter and
+    // drop the entry on the way back out.
+    const input = JSON.parse(
+      '{"__proto__":{"token":"abc"},"id":"1"}',
+    ) as JsonValue;
+
+    const redacted = redactJson(input);
+
+    expect(Object.keys(redacted as object)).toEqual(["__proto__", "id"]);
+    expect((redacted as Record<string, unknown>)["__proto__"]).toEqual({
+      token: DEFAULT_REDACTION_REPLACEMENT,
+    });
+    expect(Object.getPrototypeOf(redacted)).toBe(Object.prototype);
+  });
+
+  it("leaves Object.prototype alone when redacting a __proto__ key", () => {
+    redactJson(JSON.parse('{"__proto__":{"polluted":true}}') as JsonValue);
+
+    expect("polluted" in {}).toBe(false);
   });
 
   it("does not mutate the input", () => {

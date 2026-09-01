@@ -21,7 +21,7 @@ import { consumeRateLimit } from "@/lib/ingest/rate-limit";
 import { shouldStampLastUsed } from "@/lib/ingest/last-used";
 import {
   insertLogEvents,
-  isOriginRegistered,
+  listRegisteredOrigins,
   prismaApplicationUsageStore,
   prismaIngestKeyStore,
   stampKeyLastUsed,
@@ -250,21 +250,32 @@ export const POST = withErrorHandler(
  * that specific key's own allowlist.
  *
  * AUTH TIER: PUBLIC. A preflight carries no credential and cannot, so the
- * lookup behind it is cached and budgeted (see `lib/ingest/origin-registry`)
- * rather than issued per request.
+ * answer comes from a snapshot of the whole registry refreshed once per TTL
+ * (see `lib/ingest/origin-registry`) rather than a query per request.
  */
-export async function OPTIONS(request: Request): Promise<NextResponse> {
+const handleOptions = async (request: Request): Promise<NextResponse> => {
   const origin = request.headers.get("origin");
 
-  // Cached and budgeted: this path is unauthenticated, so it must not be a way
-  // to make an anonymous request cost a database query.
   const registered =
     origin !== null &&
-    (await isOriginRegisteredCached(origin, isOriginRegistered));
+    (await isOriginRegisteredCached(origin, listRegisteredOrigins));
 
   if (!registered) {
     return new NextResponse(null, { status: 204, headers: VARY_ORIGIN });
   }
 
   return new NextResponse(null, { status: 204, headers: corsHeaders(origin) });
-}
+};
+
+/**
+ * Wrapped like every other handler here.
+ *
+ * The snapshot already fails closed on a database failure, so the wrapper is
+ * the backstop for anything else: without it an unexpected throw would leave
+ * Next to answer an unshaped 500 with no `Vary: Origin` on a response whose
+ * cacheability depends on exactly that header.
+ */
+export const OPTIONS = withErrorHandler(
+  { context: "ingest.options", errorHeaders: () => VARY_ORIGIN },
+  handleOptions,
+);

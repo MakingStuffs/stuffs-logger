@@ -35,7 +35,7 @@ const MAX_KEY_LENGTH = 256;
  */
 export type ParsedIngestKey =
   | {
-      /** Browser-safe key, gated on the request `Origin`. */
+      /** The key class a browser uses; ingest gates it on the request `Origin`. */
       kind: "public";
       /** The full literal key, which is what the database stores and looks up. */
       key: string;

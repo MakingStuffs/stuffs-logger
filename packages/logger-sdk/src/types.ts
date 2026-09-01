@@ -62,11 +62,25 @@ export interface LoggerStats {
   readonly failed: number;
 }
 
+/**
+ * Why a batch was condemned, when the reason tells the logger what to do next.
+ *
+ * `"urgent-body-limit"` means the ONLY thing that refused the batch was the
+ * unload path's keepalive cap, and the same batch would fit an ordinary flush.
+ * The logger requeues those instead of discarding them; every other drop is
+ * final, because a batch requeued after a refusal that would repeat is a loop.
+ */
+export type DropCause = "urgent-body-limit";
+
 /** What became of one batch. A transport resolves; it never rejects. */
 export type TransportOutcome =
   | { readonly kind: "sent"; readonly accepted: number }
   | { readonly kind: "retry"; readonly retryAfterMs?: number }
-  | { readonly kind: "dropped"; readonly reason: string }
+  | {
+      readonly kind: "dropped";
+      readonly reason: string;
+      readonly cause?: DropCause;
+    }
   | { readonly kind: "disabled"; readonly reason: string };
 
 /** One batch, ready to send. */

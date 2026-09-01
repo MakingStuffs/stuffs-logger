@@ -15,8 +15,8 @@ matter what goes wrong.
   cleartext `http:` endpoint is refused off `localhost`, and no cookies are
   ever sent to the ingest endpoint.
 - **Small.** No runtime dependencies. Measured with `pnpm --filter @jf-logger/sdk size`:
-  6.17 KB gzipped for `createLogger` alone, 6.95 KB for the whole browser entry
-  point, 7.16 KB for the drop-in `<script>` build.
+  6.22 KB gzipped for `createLogger` alone, 7.00 KB for the whole browser entry
+  point, 7.20 KB for the drop-in `<script>` build.
 
 ---
 
@@ -28,15 +28,38 @@ pnpm add @jf-logger/sdk
 
 ## Keys
 
-| Key         | Where it may be used | Why                                                                    |
-| ----------- | -------------------- | ---------------------------------------------------------------------- |
-| `jfl_pub_…` | Browsers only        | Gated on the request `Origin`, so it is safe to publish in page source |
-| `jfl_sec_…` | Servers only         | Grants ingest without an origin check — never ship one to a browser    |
+| Key         | Where it may be used | Why                                                                 |
+| ----------- | -------------------- | ------------------------------------------------------------------- |
+| `jfl_pub_…` | Browsers only        | Origin-checked at ingest, so it is meant to live in page source     |
+| `jfl_sec_…` | Servers only         | Grants ingest without an origin check — never ship one to a browser |
 
 The SDK enforces this itself: a secret key configured in the browser, or a
 public key configured in Node, produces an inert logger and an `onError`
 diagnostic rather than a request. Ingest would refuse both anyway; failing on
 the client means you find out while you are building, not in production.
+
+### What publishing a public key actually costs you
+
+The origin allowlist constrains **real browsers**, and only those. A page
+served from an origin you have not allowed cannot POST with your public key,
+because the browser sets `Origin` and will not let the page lie about it.
+Nothing outside a browser is under that constraint: `source` is a field in the
+request body, so a script, a bot or a `curl` invocation can declare
+`source: "browser"`, send whatever `Origin` it likes, and be accepted.
+
+So read a published public key as exactly what it is: **a write credential for
+one application's log stream, which anyone who can read your page source can
+replay.** What it is not bounds the damage — it grants no read access to
+anything, it cannot write into any other application, and everything it writes
+is counted against that application's daily event and byte quota, after which
+ingest refuses the key until the day rolls over. The realistic worst case is
+junk in one log stream and a quota spent early.
+
+That is an accepted trade for "drop a script tag on a static site", and it is
+the same trade every browser telemetry SDK makes. If it is not one you want to
+make for a particular application, do not put a key in the page at all: proxy
+ingest through your own server, authenticate the caller however you already
+authenticate them, and hold a `jfl_sec_` key there.
 
 **There is no `app` option, deliberately.** Which application a batch belongs
 to is derived server-side from the verified key. Letting a caller name its own
@@ -155,7 +178,7 @@ import {
 } from "@jf-logger/sdk/browser";
 
 export const logger = createLogger({
-  apiKey: process.env.NEXT_PUBLIC_JF_LOGGER_KEY, // jfl_pub_… — safe to publish
+  apiKey: process.env.NEXT_PUBLIC_JF_LOGGER_KEY, // jfl_pub_… — see "Keys" above
   environment: process.env.NEXT_PUBLIC_VERCEL_ENV,
 });
 

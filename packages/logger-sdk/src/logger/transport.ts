@@ -129,8 +129,20 @@ export function createHttpTransport(options: HttpTransportOptions): Transport {
       // `413` this transport can only read as "condemned". The caller sizes
       // batches to the same budget, so reaching this guard means one event
       // alone is too big — the last resort, not the routine path.
+      const bytes = jsonByteLength(batch);
       const limit = urgent ? MAX_KEEPALIVE_BODY_BYTES : MAX_BODY_BYTES;
-      if (jsonByteLength(batch) > limit) {
+      if (bytes > limit) {
+        // Only the keepalive cap refused it, and that cap is four times
+        // smaller than the server's. Saying so lets the caller put the batch
+        // back for an ordinary flush instead of destroying an event that a
+        // tab switch — not even a real unload — happened to catch in flight.
+        if (urgent && bytes <= MAX_BODY_BYTES) {
+          return {
+            kind: "dropped",
+            reason: "batch exceeded the keepalive body limit",
+            cause: "urgent-body-limit",
+          };
+        }
         return { kind: "dropped", reason: "batch exceeded the body limit" };
       }
 

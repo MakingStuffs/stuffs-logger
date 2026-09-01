@@ -7,7 +7,7 @@
  * cannot drift between them.
  */
 
-export { LOG_LEVELS } from "./contract";
+export { DEFAULT_REDACTION_KEYS, LOG_LEVELS } from "./contract";
 export type { LoggerKind, LogLevel, LogSource } from "./contract";
 
 export { SDK_NAME, SDK_VERSION } from "./defaults";
@@ -22,11 +22,11 @@ export type {
 } from "./capture/errors";
 
 export type { ConsoleMethod } from "./logger/original-console";
-export { DEFAULT_REDACTION_KEYS } from "./logger/redact";
 
 export type {
   CaptureInput,
   DiagnosticHandler,
+  DropCause,
   JsonObject,
   LogContext,
   Logger,

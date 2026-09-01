@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  DEFAULT_REDACTION_KEYS as CORE_REDACTION_KEYS,
+  DEFAULT_REDACTION_REPLACEMENT,
+} from "@jf-logger/core/redaction";
+
+import { DEFAULT_REDACTION_KEYS } from "../public-api";
 import { createRedactor } from "./redact";
 
 describe("createRedactor", () => {
@@ -58,5 +64,25 @@ describe("createRedactor", () => {
 
   it("uses the configured replacement", () => {
     expect(createRedactor({ replacement: "***" })?.replacement).toBe("***");
+  });
+
+  it("defaults to the replacement the server also uses", () => {
+    expect(createRedactor(undefined)?.replacement).toBe(
+      DEFAULT_REDACTION_REPLACEMENT,
+    );
+  });
+
+  it("publishes the core's key list rather than a copy of it", () => {
+    // The whole point of the shared control: a key added in the core is
+    // redacted by the client too, with no second list to remember to update.
+    expect(DEFAULT_REDACTION_KEYS).toBe(CORE_REDACTION_KEYS);
+  });
+
+  it("redacts every key the shared list names", () => {
+    const redactor = createRedactor(undefined);
+
+    for (const key of CORE_REDACTION_KEYS) {
+      expect(redactor?.shouldRedact(key), key).toBe(true);
+    }
   });
 });

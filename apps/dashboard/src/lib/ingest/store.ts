@@ -40,29 +40,30 @@ export const prismaIngestKeyStore: IngestKeyStore = {
 };
 
 /**
- * Whether any live public key permits this origin.
+ * Every origin registered by a live public key.
  *
  * Used ONLY by the CORS preflight, which cannot see the `x-jf-key` header —
  * browsers do not send custom headers on an `OPTIONS` preflight, so the exact
- * key cannot be identified at that point. Answering from the union of live
- * allowlists keeps the preflight consistent with the allowlist the POST will
- * actually be judged against, and grants nothing on its own: the POST still
- * verifies the key and re-checks the origin against that key's own list.
+ * key cannot be identified at that point. The union of live allowlists keeps
+ * the preflight consistent with the allowlist the POST will actually be judged
+ * against, and grants nothing on its own: the POST still verifies the key and
+ * re-checks the origin against that key's own list.
  *
- * @param origin - The `Origin` header from the preflight, untrusted.
- * @returns Whether to echo the origin back as allowed.
+ * The whole set is read at once, and `lib/ingest/origin-registry` holds it for
+ * a TTL, so an anonymous preflight never costs a query no matter what `Origin`
+ * it carries. Only the allowlist column is selected — the same rows carry key
+ * material, and none of it is wanted here.
+ *
+ * @returns The registered origins, with duplicates left in; the caller builds
+ *   a set from them.
  */
-export async function isOriginRegistered(origin: string): Promise<boolean> {
-  const match = await prisma.ingestKey.findFirst({
-    where: {
-      type: "PUBLIC",
-      revokedAt: null,
-      allowedOrigins: { has: origin },
-    },
-    select: { id: true },
+export async function listRegisteredOrigins(): Promise<string[]> {
+  const keys = await prisma.ingestKey.findMany({
+    where: { type: "PUBLIC", revokedAt: null },
+    select: { allowedOrigins: true },
   });
 
-  return match !== null;
+  return keys.flatMap((key) => key.allowedOrigins);
 }
 
 /**

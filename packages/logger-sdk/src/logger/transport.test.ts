@@ -198,6 +198,35 @@ describe("createHttpTransport", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it("names the keepalive cap when the batch would fit an ordinary flush", async () => {
+    // Over the 64 KiB keepalive cap, well under the server's 256 KiB: the
+    // caller can put this batch back rather than destroy it.
+    const batch = makeBatch();
+    batch.events[0] = { ...makeBatch().events[0]!, message: "x".repeat(70000) };
+
+    const outcome = await transport().send({ batch, urgent: true });
+
+    expect(outcome).toEqual({
+      kind: "dropped",
+      reason: expect.any(String),
+      cause: "urgent-body-limit",
+    });
+  });
+
+  it("names no cause for an unload batch that busts the server limit too", async () => {
+    // Requeueing this one would only fail again on the ordinary path, so the
+    // drop must stay final.
+    const batch = makeBatch();
+    batch.events[0] = {
+      ...makeBatch().events[0]!,
+      message: "x".repeat(MAX_BODY_BYTES + 1),
+    };
+
+    const outcome = await transport().send({ batch, urgent: true });
+
+    expect(outcome).toEqual({ kind: "dropped", reason: expect.any(String) });
+  });
+
   it("disables itself where there is no fetch at all", async () => {
     vi.stubGlobal("fetch", undefined);
 

@@ -67,6 +67,33 @@ describe("projectListContext", () => {
     expect(projected).toEqual({ context: null, truncated: true });
   });
 
+  it("preserves a stored `__proto__` entry instead of losing it silently", () => {
+    // A context column arrives as JSON, where `__proto__` is an ordinary own
+    // property. Assigned onto a plain accumulator it would reach
+    // Object.prototype's setter, which stores nothing and — for an object
+    // value — quietly re-prototypes the accumulator instead.
+    const context: unknown = JSON.parse(
+      `{"__proto__":{"tenant":"acme"},"huge":"${"x".repeat(200)}"}`,
+    );
+
+    const projected = projectListContext(context, 64);
+
+    expect(projected.truncated).toBe(true);
+    expect(JSON.stringify(projected.context)).toBe(
+      '{"__proto__":{"tenant":"acme"}}',
+    );
+  });
+
+  it("returns an ordinary object, which the client boundary requires", () => {
+    const context: unknown = JSON.parse('{"__proto__":"kept","b":"x"}');
+
+    const projected = projectListContext(context, 24);
+
+    // React refuses to serialise a null-prototype object to a client
+    // component, so the accumulator's null prototype must not escape.
+    expect(Object.getPrototypeOf(projected.context)).toBe(Object.prototype);
+  });
+
   it("honours an explicit budget", () => {
     const projected = projectListContext({ a: "12345678901234567890" }, 8);
 

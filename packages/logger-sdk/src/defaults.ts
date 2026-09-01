@@ -34,9 +34,6 @@ export const DEFAULT_MIN_LEVEL: LogLevel = "trace";
 /** Keep every event unless the caller samples. */
 export const DEFAULT_SAMPLE_RATE = 1;
 
-/** What a redacted value is replaced with. */
-export const DEFAULT_REDACTION_REPLACEMENT = "[redacted]";
-
 /** Substituted for the part of a value that did not fit inside the budget. */
 export const TRUNCATION_MARKER = "[truncated]";
 

@@ -28,10 +28,13 @@ const IS_PROD = process.env.NODE_ENV === "production";
  * The environment variables that switch authentication off.
  *
  * Read here rather than imported from `isAuthSkipped()` for one reason: this
- * module is imported by `next.config.ts`, which is loaded by the Next CLI
- * before any application code exists, and pulling the auth package (and with
- * it Better Auth and the auth Prisma client) into that graph to answer a
- * two-variable question is not a trade worth making. The semantics are copied
+ * module sits on the PROXY's import graph — `src/proxy.ts` imports
+ * `lib/security/csp.ts`, which imports this file — and Next compiles the proxy
+ * into its own entry that runs ahead of every document request. Pulling the
+ * auth package (and with it Better Auth and the auth Prisma client) into that
+ * bundle to answer a two-variable question is not a trade worth making, and it
+ * is a trade that gets worse, not better, if the proxy is ever moved to the
+ * Edge runtime with `export const runtime = "edge"`. The semantics are copied
  * from the installed package verbatim — both names, lowercased, compared to
  * `"true"` — and the test alongside this file pins them.
  */

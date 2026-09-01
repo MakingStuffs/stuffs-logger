@@ -579,6 +579,93 @@ describe("createLoggerWith", () => {
       expect(logger.stats.queued).toBe(4 - transport.events.length);
     });
 
+    it("requeues an event the keepalive cap alone refused, and sends it on the next flush", async () => {
+      // A tab switch fires the urgent path, not just a real unload. An event
+      // between the 64 KiB keepalive cap and the server's 256 KiB limit must
+      // survive it — destroying it would lose exactly the big, interesting
+      // event someone will go looking for.
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(new Response(null, { status: 202 }));
+      vi.stubGlobal("fetch", fetchMock);
+      let teardown: ((urgent: boolean) => void) | undefined;
+      const logger = createLoggerWith(
+        {
+          apiKey: SECRET_KEY,
+          endpoint: "https://logs.example.com",
+          transport: createHttpTransport({
+            endpoint: "https://logs.example.com/api/v1/ingest",
+            apiKey: SECRET_KEY,
+            report: vi.fn(),
+          }),
+        },
+        createTestAdapter({
+          installLifecycle: (flush) => {
+            teardown = flush;
+            return () => {};
+          },
+        }),
+      );
+
+      const error = new Error("boom");
+      error.stack = multiByteMessage(60_000);
+      logger.capture({
+        level: "error",
+        message: multiByteMessage(24_000),
+        error,
+      });
+
+      teardown?.(true);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(logger.stats.queued).toBe(1);
+      expect(logger.stats.dropped).toBe(0);
+
+      await logger.flush();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const body = (fetchMock.mock.calls[0]?.[1] as { body: string }).body;
+      const size = new TextEncoder().encode(body).length;
+      expect(size).toBeGreaterThan(MAX_KEEPALIVE_BODY_BYTES);
+      expect(size).toBeLessThanOrEqual(MAX_BODY_BYTES);
+      expect((JSON.parse(body) as { events: unknown[] }).events).toHaveLength(
+        1,
+      );
+      expect(logger.stats.sent).toBe(1);
+      expect(logger.stats.dropped).toBe(0);
+      vi.unstubAllGlobals();
+    });
+
+    it("still discards an event no flush could ever carry", async () => {
+      const transport = createFakeTransport();
+      transport.respondWith({
+        kind: "dropped",
+        reason: "batch exceeded the body limit",
+      });
+      let teardown: ((urgent: boolean) => void) | undefined;
+      const logger = createLoggerWith(
+        {
+          apiKey: SECRET_KEY,
+          transport,
+          endpoint: "https://logs.example.com",
+        },
+        createTestAdapter({
+          installLifecycle: (flush) => {
+            teardown = flush;
+            return () => {};
+          },
+        }),
+      );
+
+      logger.info("too big for anything");
+      teardown?.(true);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(logger.stats.queued).toBe(0);
+      expect(logger.stats.dropped).toBe(1);
+    });
+
     it("sends the unload batch even while an ordinary flush is still in flight", async () => {
       const transport = createGatedTransport();
       let teardown: ((urgent: boolean) => void) | undefined;

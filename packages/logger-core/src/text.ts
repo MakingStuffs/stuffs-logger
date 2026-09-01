@@ -1,4 +1,5 @@
 import { MAX_CONTEXT_DEPTH } from "./constants";
+import { setJsonEntry } from "./json";
 import type { JsonValue } from "./json";
 
 /**
@@ -139,7 +140,11 @@ function sanitiseAtDepth(value: JsonValue, depth: number): JsonValue {
 
   const result: Record<string, JsonValue> = {};
   for (const [key, entry] of Object.entries(value)) {
-    result[sanitiseLogText(key)] = sanitiseAtDepth(entry, depth + 1);
+    setJsonEntry(
+      result,
+      sanitiseLogText(key),
+      sanitiseAtDepth(entry, depth + 1),
+    );
   }
 
   return result;

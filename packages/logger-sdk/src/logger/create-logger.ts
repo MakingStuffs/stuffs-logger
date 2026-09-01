@@ -140,6 +140,16 @@ export function createLoggerWith(
     }
 
     if (outcome.kind === "dropped") {
+      // A batch refused only by the unload path's smaller keepalive cap is put
+      // back, not destroyed: the browser fires an urgent flush on every tab
+      // switch, and the same events fit the server's limit comfortably on the
+      // next ordinary flush. Nothing else is requeued — a drop that would
+      // repeat is a loop, so every other refusal stays final.
+      if (outcome.cause === "urgent-body-limit") {
+        queue.restore(sent);
+        return false;
+      }
+
       discardedCount += sent.length;
       report(new Error(outcome.reason), "logger.transport");
       return false;

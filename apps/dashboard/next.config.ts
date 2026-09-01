@@ -34,7 +34,7 @@ const allowedOrigins: string[] =
  * out of the `Referer` sent to any URL a log line links to.
  *
  * The nonce-based `script-src` policy is NOT here, because a nonce is
- * per-response and this list is static: `middleware.ts` ships it as
+ * per-response and this list is static: `src/proxy.ts` ships it as
  * `Content-Security-Policy-Report-Only`, and `lib/security/csp.ts` documents
  * how it gets promoted to enforcing. `frame-ancestors` stays here, enforced,
  * because a report-only header does not stop framing and this app must never

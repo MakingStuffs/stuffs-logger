@@ -1,7 +1,7 @@
 /**
- * Pure measurements over JSON-compatible values, shared by the SDK (which
- * trims a payload before sending) and the server (which rejects one that
- * arrives over the limit).
+ * Pure operations over JSON-compatible values — measuring them, and building
+ * them safely. Shared by the SDK (which trims a payload before sending) and
+ * the server (which rejects one that arrives over the limit).
  */
 
 /** A value that survives a `JSON.stringify` / `JSON.parse` round trip. */
@@ -77,4 +77,40 @@ export function jsonDepth(value: unknown, limit = 64): number {
   }
 
   return deepest;
+}
+
+/**
+ * Adds one entry to a JSON object being built from computed keys.
+ *
+ * Plain assignment is not safe here. `result[key] = value` goes through
+ * `[[Set]]`, and `__proto__` is an ACCESSOR inherited from `Object.prototype`:
+ * assigning it runs the setter instead of creating a property, so the entry
+ * silently disappears and an object value becomes the accumulator's prototype.
+ * Nothing is polluted — `Object.prototype` itself is never touched — but a
+ * function whose contract is to preserve structure quietly loses a field, and
+ * the key that triggers it can arrive through any transform that produces
+ * `__proto__` from something else (`sanitiseLogText("__pro to__")` does).
+ *
+ * Defining the property instead creates an own data property for every key,
+ * `__proto__` included, and leaves the accumulator an ordinary object for
+ * everything downstream.
+ *
+ * @param target - The object under construction. Mutated.
+ * @param key - The computed key, trusted for nothing.
+ * @param value - The value to store under it.
+ * @example
+ * const result: Record<string, JsonValue> = {};
+ * setJsonEntry(result, "__proto__", { a: 1 }); // kept as an own property
+ */
+export function setJsonEntry(
+  target: Record<string, JsonValue>,
+  key: string,
+  value: JsonValue,
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
 }

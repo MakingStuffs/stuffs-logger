@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, type ProxyConfig } from "next/server";
 
 import {
   buildContentSecurityPolicy,
@@ -10,18 +10,29 @@ import {
 /**
  * Per-request CSP nonce plumbing. NOT an auth boundary.
  *
- * This middleware does exactly one thing: mint a nonce, hand it to Next on the
+ * `proxy` is what Next 16 calls this file. The `middleware` convention is
+ * deprecated in the installed version — `next/dist/lib/constants.js` carries
+ * both `MIDDLEWARE_FILENAME` and `PROXY_FILENAME`, `next build` warns on the
+ * former, and `next/dist/build/templates/middleware.js` loads the export named
+ * `proxy` (or a default export) from a `proxy` file.
+ *
+ * This proxy does exactly one thing: mint a nonce, hand it to Next on the
  * request so the framework stamps it onto its own scripts, and attach the
  * report-only policy to the response. Authentication is not, and must not be,
  * done here — every page gates itself with `getSessionOrRedirect` and every
- * data-access function re-checks the session, because middleware is skippable
- * and a check that only lives here is a check that can be routed around.
+ * data-access function re-checks the session, because a proxy is skippable and
+ * a check that only lives here is a check that can be routed around.
+ *
+ * The nonce is minted HERE and the request's `content-security-policy` header
+ * is OVERWRITTEN with the policy built around it. That header is how Next
+ * discovers the nonce, so forwarding a caller's own value would let them pick
+ * the nonce every script on the page is then blessed with.
  *
  * The matcher excludes `/api/*`: the ingest endpoint is a cross-origin API for
  * other sites' browsers, a script policy means nothing to it, and it must not
- * pay for a middleware hop on the hottest path in the product.
+ * pay for a proxy hop on the hottest path in the product.
  */
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const nonce = createCspNonce();
   const policy = buildContentSecurityPolicy(nonce);
 
@@ -42,4 +53,4 @@ export const config = {
      */
     "/((?!api|_next/static|_next/image|favicon.ico).*)",
   ],
-};
+} satisfies ProxyConfig;

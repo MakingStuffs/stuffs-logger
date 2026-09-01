@@ -1,12 +1,12 @@
 import { INGEST_KEY_HEADER, MAX_BODY_BYTES } from "@jf-logger/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resetOriginRegistryCache } from "@/lib/ingest/origin-registry";
+import { resetOriginRegistrySnapshot } from "@/lib/ingest/origin-registry";
 import { DAILY_EVENT_QUOTA } from "@/lib/ingest/quota";
 import { resetRateLimits } from "@/lib/ingest/rate-limit";
 import {
   insertLogEvents,
-  isOriginRegistered,
+  listRegisteredOrigins,
   prismaApplicationUsageStore,
   prismaIngestKeyStore,
   stampKeyLastUsed,
@@ -29,7 +29,7 @@ vi.mock("@/lib/ingest/store", () => ({
   },
   prismaApplicationUsageStore: { increment: vi.fn() },
   insertLogEvents: vi.fn(),
-  isOriginRegistered: vi.fn(),
+  listRegisteredOrigins: vi.fn(),
   stampKeyLastUsed: vi.fn(),
 }));
 
@@ -82,7 +82,7 @@ function makeRequest(
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimits();
-  resetOriginRegistryCache();
+  resetOriginRegistrySnapshot();
 
   vi.mocked(prismaIngestKeyStore.findPublicKey).mockResolvedValue(
     publicKeyRow(),
@@ -94,7 +94,7 @@ beforeEach(() => {
   });
   vi.mocked(insertLogEvents).mockResolvedValue(1);
   vi.mocked(stampKeyLastUsed).mockResolvedValue(undefined);
-  vi.mocked(isOriginRegistered).mockResolvedValue(true);
+  vi.mocked(listRegisteredOrigins).mockResolvedValue([ORIGIN]);
 });
 
 describe("POST /api/v1/ingest", () => {
@@ -295,7 +295,7 @@ describe("OPTIONS /api/v1/ingest", () => {
   });
 
   it("grants nothing to an unregistered origin", async () => {
-    vi.mocked(isOriginRegistered).mockResolvedValue(false);
+    vi.mocked(listRegisteredOrigins).mockResolvedValue([]);
 
     const response = await OPTIONS(preflight());
 
@@ -311,7 +311,7 @@ describe("OPTIONS /api/v1/ingest", () => {
     );
 
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
-    expect(isOriginRegistered).not.toHaveBeenCalled();
+    expect(listRegisteredOrigins).not.toHaveBeenCalled();
   });
 
   it("does not query the database for every repeat preflight", async () => {
@@ -319,6 +319,25 @@ describe("OPTIONS /api/v1/ingest", () => {
     await OPTIONS(preflight());
     await OPTIONS(preflight());
 
-    expect(isOriginRegistered).toHaveBeenCalledTimes(1);
+    expect(listRegisteredOrigins).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not query the database for a spray of unknown origins", async () => {
+    for (let index = 0; index < 100; index += 1) {
+      await OPTIONS(preflight({ origin: `https://o${index}.example.test` }));
+    }
+
+    expect(listRegisteredOrigins).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps refusing, and keeps Vary, when the registry read fails", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.mocked(listRegisteredOrigins).mockRejectedValue(new Error("db is down"));
+
+    const response = await OPTIONS(preflight());
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(response.headers.get("vary")).toBe("Origin");
   });
 });

@@ -57,12 +57,27 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  *
  * Entries are taken in their stored order and measured one at a time, so a
  * single oversized value is dropped rather than discarding its siblings.
+ *
+ * The accumulator has a NULL PROTOTYPE, then is spread onto an ordinary object
+ * before it leaves. Both halves matter, and neither is about prototype
+ * pollution — `Object.prototype` is never written here:
+ *
+ *  - Assigning a computed `__proto__` key onto a normal object literal reaches
+ *    `Object.prototype`'s setter, which ignores a non-object value and stores
+ *    nothing. The entry would be counted against the budget, reported as kept,
+ *    and then silently not be there. A null-prototype accumulator has no such
+ *    setter to reach, so the key lands as data.
+ *  - The spread puts the ordinary prototype back, because React refuses to
+ *    serialise a null-prototype object across the server/client boundary
+ *    ("Classes or null prototypes are not supported"), and this value is part
+ *    of a list row that crosses it. Spreading DEFINES each key rather than
+ *    assigning it, so `__proto__` survives the trip.
  */
 function fitEntries(
   entries: readonly (readonly [string, unknown])[],
   maxBytes: number,
 ): { kept: Record<string, unknown>; dropped: boolean } {
-  const kept: Record<string, unknown> = {};
+  const kept: Record<string, unknown> = Object.create(null);
   let used = 0;
   let dropped = false;
 
@@ -77,7 +92,7 @@ function fitEntries(
     used += cost;
   }
 
-  return { kept, dropped };
+  return { kept: { ...kept }, dropped };
 }
 
 /**

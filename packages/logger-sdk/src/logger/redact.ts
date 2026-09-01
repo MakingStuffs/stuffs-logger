@@ -1,8 +1,18 @@
-import { DEFAULT_REDACTION_REPLACEMENT } from "../defaults";
-import type { RedactionOptions, RedactionPattern } from "../types";
+import { createKeyRedactor } from "../contract";
+import type { KeyRedactor } from "../contract";
+import type { RedactionOptions } from "../types";
 
 /**
  * Key-shaped secret detection, applied while a context object is normalized.
+ *
+ * The matching itself is NOT implemented here: the key list, the key
+ * normalization and the pattern compilation all come from
+ * `@jf-logger/core`'s redaction module via `../contract`, because the SDK and
+ * the ingest server are two ends of one control. Two lists would drift, and
+ * the drift would be silent — a key added server-side would simply never be
+ * redacted in the browser. What IS the SDK's own is the policy below: a
+ * caller may switch client-side redaction off, and the server's pass cannot
+ * be switched off by anyone holding an ingest key.
  *
  * The SDK ships credentials, request headers and form state to a server that
  * stores them and renders them in a dashboard, so a secret-shaped value is
@@ -29,77 +39,12 @@ import type { RedactionOptions, RedactionPattern } from "../types";
  */
 
 /**
- * Secret-shaped key fragments, matched against a normalized key.
+ * Decides whether a key's value may leave the process.
  *
- * Deliberately broad — a field wrongly redacted is an inconvenience, a
- * credential in a log store is an incident.
+ * The SDK's name for the core's redactor — the same matcher the server runs,
+ * built here from the caller's configuration.
  */
-export const DEFAULT_REDACTION_KEYS: readonly string[] = [
-  "password",
-  "passwd",
-  "pwd",
-  "passphrase",
-  "secret",
-  "token",
-  "apikey",
-  "accesskey",
-  "privatekey",
-  "publickey",
-  "authorization",
-  "auth",
-  "credential",
-  "cookie",
-  "session",
-  "bearer",
-  "jwt",
-  "signature",
-  "otp",
-  "pin",
-  "cvv",
-  "cardnumber",
-  "creditcard",
-  "ssn",
-  "salt",
-  "hash",
-];
-
-/**
- * Reduces a key to comparable form: lower case, punctuation removed.
- *
- * `API_KEY`, `api-key`, `apiKey` and `x-api-key` all normalize to a string
- * containing `apikey`, so one pattern covers every casing convention a caller
- * might use.
- */
-function normalizeKey(key: string): string {
-  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-/** Decides whether a key's value may leave the process. */
-export interface Redactor {
-  /** Whether the value under `key` must be replaced. */
-  shouldRedact(key: string): boolean;
-  /** What to replace it with. */
-  readonly replacement: string;
-}
-
-function compile(patterns: readonly RedactionPattern[]): {
-  literals: readonly string[];
-  expressions: readonly RegExp[];
-} {
-  const literals: string[] = [];
-  const expressions: RegExp[] = [];
-
-  for (const pattern of patterns) {
-    if (typeof pattern === "string") {
-      const normalized = normalizeKey(pattern);
-      if (normalized.length > 0) literals.push(normalized);
-      continue;
-    }
-    expressions.push(pattern);
-  }
-
-  return { literals, expressions };
-}
+export type Redactor = KeyRedactor;
 
 /**
  * Builds the redactor for a logger.
@@ -107,29 +52,12 @@ function compile(patterns: readonly RedactionPattern[]): {
  * @param options - Redaction configuration; omitted means "defaults, enabled".
  * @returns A redactor, or `undefined` when redaction is switched off.
  * @example
- * createRedactor()?.shouldRedact("X-Api-Key"); // true
+ * createRedactor(undefined)?.shouldRedact("X-Api-Key"); // true
  */
 export function createRedactor(
   options: RedactionOptions | undefined,
 ): Redactor | undefined {
   if (options?.enabled === false) return undefined;
 
-  const configured =
-    options?.keys ??
-    (options?.additionalKeys
-      ? [...DEFAULT_REDACTION_KEYS, ...options.additionalKeys]
-      : DEFAULT_REDACTION_KEYS);
-
-  const { literals, expressions } = compile(configured);
-  const replacement = options?.replacement ?? DEFAULT_REDACTION_REPLACEMENT;
-
-  return {
-    replacement,
-    shouldRedact(key: string): boolean {
-      if (expressions.some((expression) => expression.test(key))) return true;
-
-      const normalized = normalizeKey(key);
-      return literals.some((literal) => normalized.includes(literal));
-    },
-  };
+  return createKeyRedactor(options);
 }

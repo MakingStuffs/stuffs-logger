@@ -35,6 +35,19 @@ export {
 
 export { LOG_LEVELS, levelRank } from "@jf-logger/core/taxonomy";
 
+/**
+ * Redaction is ONE control with two ends, so it is one implementation. The
+ * client redacts so a secret never enters its buffers; the server redacts
+ * because it cannot trust that the client did. A second key list here would
+ * mean a key added to the server's list silently never reaching the browser.
+ */
+export {
+  createKeyRedactor,
+  DEFAULT_REDACTION_KEYS,
+} from "@jf-logger/core/redaction";
+
+export type { KeyRedactor } from "@jf-logger/core/redaction";
+
 export { jsonByteLength } from "@jf-logger/core/json";
 
 export { parseIngestKey } from "@jf-logger/core/keys";

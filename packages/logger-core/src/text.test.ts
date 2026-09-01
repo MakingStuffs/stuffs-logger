@@ -101,6 +101,30 @@ describe("sanitiseJsonText", () => {
     expect(sanitiseJsonText(input)).toEqual({ badkey: "value" });
   });
 
+  it("keeps a key that sanitises to __proto__ rather than losing it", () => {
+    // The NUL is invisible in a dashboard, so this key reads as "__proto__"
+    // and only BECOMES it once sanitised. Assigning it would run the
+    // Object.prototype setter: the entry would vanish and the object value
+    // would become the result's prototype.
+    const input = { [`__pro${NUL}to__`]: { nested: "value" }, id: "1" };
+
+    const result = sanitiseJsonText(input);
+
+    expect(Object.keys(result as object)).toEqual(["__proto__", "id"]);
+    expect((result as Record<string, unknown>)["__proto__"]).toEqual({
+      nested: "value",
+    });
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+    // The entry survives serialisation, which is where it is going.
+    expect(JSON.stringify(result)).toContain("__proto__");
+  });
+
+  it("leaves Object.prototype alone when a key sanitises to __proto__", () => {
+    sanitiseJsonText({ [`__pro${NUL}to__`]: { polluted: true } });
+
+    expect("polluted" in {}).toBe(false);
+  });
+
   it("leaves non-string leaves alone", () => {
     const input = { count: 2, flag: true, missing: null };
 
