@@ -2,36 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
-import type { LogEventListItem } from "@/lib/logs/dto";
-
+import { makeLogEventListItem as makeEvent } from "./log-event-fixtures";
 import { LogTable } from "./log-table";
-
-function makeEvent(
-  overrides: Partial<LogEventListItem> = {},
-): LogEventListItem {
-  return {
-    id: "event-1",
-    applicationId: "app-1",
-    applicationSlug: "checkout",
-    applicationName: "Checkout",
-    timestamp: "2026-01-15T09:31:04.000Z",
-    receivedAt: "2026-01-15T09:31:05.000Z",
-    level: "error",
-    message: "Payment provider timed out",
-    logger: "manual",
-    environment: "production",
-    release: "1.4.2",
-    source: "browser",
-    sessionId: "session-1",
-    url: "https://shop.example.test/checkout",
-    deviceType: "mobile",
-    os: "iOS 18",
-    browser: "Safari",
-    errorName: "TimeoutError",
-    hasContext: true,
-    ...overrides,
-  };
-}
 
 describe("LogTable", () => {
   it("renders one row per event", () => {
@@ -79,6 +51,131 @@ describe("LogTable", () => {
     ).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("TimeoutError")).toBeInTheDocument();
     expect(screen.getByText("Safari")).toBeInTheDocument();
+  });
+
+  it("shows the event's context as JSON text when the row is expanded", async () => {
+    const user = userEvent.setup();
+    render(<LogTable events={[makeEvent()]} />);
+
+    await user.click(screen.getByRole("button", { name: /show details for/i }));
+
+    expect(
+      screen.getByRole("group", { name: "Event context, as JSON" }),
+    ).toHaveTextContent('"orderId": "abc-123"');
+  });
+
+  it("shows the stack trace when the row is expanded", async () => {
+    const user = userEvent.setup();
+    render(<LogTable events={[makeEvent()]} />);
+
+    await user.click(screen.getByRole("button", { name: /show details for/i }));
+
+    expect(
+      screen.getByRole("group", { name: "Stack trace" }),
+    ).toHaveTextContent("at pay (checkout.js:14:9)");
+  });
+
+  it("renders an HTML-shaped context value as text, never as markup", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <LogTable
+        events={[
+          makeEvent({
+            context: { note: '<img src=x onerror="alert(1)">' },
+          }),
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /show details for/i }));
+
+    expect(
+      screen.getByRole("group", { name: "Event context, as JSON" }),
+    ).toHaveTextContent("onerror");
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("renders an HTML-shaped stack trace as text, never as markup", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <LogTable
+        events={[
+          makeEvent({
+            errorStack:
+              'Error: boom\n    at <iframe src="javascript:alert(1)">',
+          }),
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /show details for/i }));
+
+    expect(
+      screen.getByRole("group", { name: "Stack trace" }),
+    ).toHaveTextContent("javascript:alert(1)");
+    expect(container.querySelector("iframe")).toBeNull();
+  });
+
+  it("points at the full event when the context was reduced for the stream", async () => {
+    const user = userEvent.setup();
+    render(<LogTable events={[makeEvent({ contextTruncated: true })]} />);
+
+    await user.click(screen.getByRole("button", { name: /show details for/i }));
+
+    expect(
+      screen.getByText(/left out to keep the stream light/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "View the whole context" }),
+    ).toHaveAttribute("href", "/logs/event-1");
+  });
+
+  it("says so when the context is too large to carry in the stream at all", async () => {
+    const user = userEvent.setup();
+    render(
+      <LogTable
+        events={[makeEvent({ context: null, contextTruncated: true })]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /show details for/i }));
+
+    expect(
+      screen.getByText(/too large to show in the stream/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Event context, as JSON" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("points at the full event when the stack was cut short", async () => {
+    const user = userEvent.setup();
+    render(<LogTable events={[makeEvent({ errorStackTruncated: true })]} />);
+
+    await user.click(screen.getByRole("button", { name: /show details for/i }));
+
+    expect(
+      screen.getByText(/cut short to keep the stream light/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "View the whole trace" }),
+    ).toHaveAttribute("href", "/logs/event-1");
+  });
+
+  it("shows no context block for an event that was logged without any", async () => {
+    const user = userEvent.setup();
+    render(
+      <LogTable events={[makeEvent({ hasContext: false, context: null })]} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /show details for/i }));
+
+    expect(
+      screen.queryByRole("group", { name: "Event context, as JSON" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "View full event" }),
+    ).toBeInTheDocument();
   });
 
   it("collapses the row again when toggled twice", async () => {

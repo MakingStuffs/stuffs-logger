@@ -21,6 +21,10 @@ import {
   LOGS_PATH,
   normaliseSearchParams,
 } from "@/components/logs/search-params";
+import {
+  AccessRefused,
+  resolveAccess,
+} from "@/components/ui-states/access-refused";
 import { EmptyState } from "@/components/ui-states/empty-state";
 import { APP_SLUG } from "@/constants/environment";
 import { listApplications } from "@/lib/apps/queries";
@@ -67,10 +71,29 @@ export default async function LogsPage({
   }
 
   const { filters } = parsed;
-  const [applications, environments] = await Promise.all([
-    listApplications(session),
-    listEnvironments(session, filters.applicationId),
-  ]);
+
+  // The filter panel's own data is the first gated read on this page, so a
+  // non-internal session is refused here rather than inside the streamed
+  // results — which is why `LogResults` below has nothing to catch.
+  const outcome = await resolveAccess(() =>
+    Promise.all([
+      listApplications(session),
+      listEnvironments(session, filters.applicationId),
+    ]),
+  );
+
+  if (!outcome.allowed) {
+    return (
+      <AppShell user={session.user}>
+        <LogsHeader />
+        <PageContentWrapper className="px-6 py-8">
+          <AccessRefused code={outcome.code} />
+        </PageContentWrapper>
+      </AppShell>
+    );
+  }
+
+  const [applications, environments] = outcome.data;
 
   return (
     <AppShell user={session.user}>

@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@journey-further/salient-ui/ui/table";
-import { KeyRound, Lock } from "lucide-react";
+import { KeyRound } from "lucide-react";
 
 import type { ApplicationSummary, IngestKeySummary } from "@/lib/logs/dto";
 
@@ -20,30 +20,24 @@ import { CreateIngestKeyDialog } from "./create-ingest-key-dialog";
 import { RevokeIngestKeyDialog } from "./revoke-ingest-key-dialog";
 
 /**
- * Whether the viewer may see this application's keys.
- *
- * A union rather than a boolean plus a nullable list, so "allowed but empty"
- * and "not allowed" cannot be confused for one another — they are very
- * different things to show a user.
- */
-export type IngestKeyAccess =
-  | { allowed: true; keys: IngestKeySummary[] }
-  | { allowed: false; message: string };
-
-/**
  * Ingest keys for one application.
  *
  * Note what is not here: a secret key's value. The data layer has no shape
  * that can carry one, and the plaintext exists only in the response of the
  * action that created it. The table shows a public key — which is designed to
  * be readable — and, for a secret key, only its label and status.
+ *
+ * Nor is there a refusal state: listing keys and reading the application are
+ * gated on the same check, so a viewer who got as far as rendering this
+ * section is entitled to its contents. The refusal is the whole PAGE's, and
+ * lives there.
  */
 export function IngestKeysSection({
   application,
-  access,
+  keys,
 }: {
   application: ApplicationSummary;
-  access: IngestKeyAccess;
+  keys: IngestKeySummary[];
 }) {
   return (
     <section
@@ -59,21 +53,13 @@ export function IngestKeysSection({
             The credentials {application.name} uses to send logs.
           </p>
         </div>
-        {access.allowed ? (
-          <CreateIngestKeyDialog
-            applicationId={application.id}
-            applicationName={application.name}
-          />
-        ) : null}
+        <CreateIngestKeyDialog
+          applicationId={application.id}
+          applicationName={application.name}
+        />
       </div>
 
-      {!access.allowed ? (
-        <EmptyState
-          icon={Lock}
-          title="Key management is restricted"
-          description={access.message}
-        />
-      ) : access.keys.length === 0 ? (
+      {keys.length === 0 ? (
         <EmptyState
           icon={KeyRound}
           title="No ingest keys yet"
@@ -99,7 +85,7 @@ export function IngestKeysSection({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {access.keys.map((key) => (
+              {keys.map((key) => (
                 <IngestKeyRow key={key.id} ingestKey={key} />
               ))}
             </TableBody>

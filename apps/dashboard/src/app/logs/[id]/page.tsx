@@ -13,6 +13,10 @@ import {
   applicationLogsHref,
   LOGS_PATH,
 } from "@/components/logs/search-params";
+import {
+  AccessRefused,
+  resolveAccess,
+} from "@/components/ui-states/access-refused";
 import { APP_SLUG } from "@/constants/environment";
 import { getLogEvent } from "@/lib/logs/queries";
 
@@ -39,7 +43,28 @@ export default async function LogEventPage({
     returnPath: `/logs/${encodeURIComponent(id)}`,
   });
 
-  const event = await getLogEvent(session, id);
+  const outcome = await resolveAccess(() => getLogEvent(session, id));
+
+  if (!outcome.allowed) {
+    return (
+      <AppShell user={session.user}>
+        <AppHeader
+          header="Log event"
+          copy="One log line, in full."
+          icon={ScrollText}
+          breadcrumbs={[
+            { label: "Log explorer", href: LOGS_PATH },
+            { label: "Event" },
+          ]}
+        />
+        <PageContentWrapper className="px-6 py-8">
+          <AccessRefused code={outcome.code} />
+        </PageContentWrapper>
+      </AppShell>
+    );
+  }
+
+  const event = outcome.data;
   if (event === null) notFound();
 
   return (

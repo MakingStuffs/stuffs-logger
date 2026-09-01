@@ -15,11 +15,14 @@ import {
 } from "./filter-vocabulary";
 import {
   EMPTY_VALUE,
+  formatContext,
+  formatStack,
   formatUtcTimestamp,
   formatUtcTimestampLong,
 } from "./format";
 import { LogLevelBadge } from "./log-level-badge";
 import { toSafeHttpUrl } from "./safe-url";
+import { TextBlock } from "./text-block";
 
 /** Cells in the summary row — the detail row spans exactly this many. */
 export const LOG_TABLE_COLUMN_COUNT = 6;
@@ -113,14 +116,11 @@ function LogRowDetails({ event }: { event: LogEventListItem }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h3 className="text-muted-foreground mb-1 text-xs font-semibold tracking-wide uppercase">
-          Message
-        </h3>
+      <DetailSection title="Message">
         <p className="font-mono text-xs break-words whitespace-pre-wrap">
           {event.message}
         </p>
-      </div>
+      </DetailSection>
 
       <dl className="grid gap-x-6 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
         <Detail label="Received (UTC)">
@@ -161,17 +161,115 @@ function LogRowDetails({ event }: { event: LogEventListItem }) {
         </Detail>
       </dl>
 
+      {event.errorStack === null ? null : (
+        <DetailSection title="Stack trace">
+          {/* Attacker-controlled, like everything else on this row: it goes
+              through TextBlock, which renders it as escaped text. */}
+          <TextBlock label="Stack trace">
+            {formatStack(event.errorStack)}
+          </TextBlock>
+          {event.errorStackTruncated ? (
+            <TruncationNote eventId={event.id} linkText="View the whole trace">
+              This trace was cut short to keep the stream light.
+            </TruncationNote>
+          ) : null}
+        </DetailSection>
+      )}
+
+      {event.hasContext ? (
+        <DetailSection title="Context">
+          {event.context === null ? (
+            // The whole blob was over the list budget with no smaller form
+            // worth showing — a single oversized value, typically.
+            <TruncationNote
+              eventId={event.id}
+              linkText="View the whole context"
+            >
+              This context is too large to show in the stream.
+            </TruncationNote>
+          ) : (
+            <>
+              <TextBlock label="Event context, as JSON">
+                {formatContext(event.context)}
+              </TextBlock>
+              {event.contextTruncated ? (
+                <TruncationNote
+                  eventId={event.id}
+                  linkText="View the whole context"
+                >
+                  Some of this context was left out to keep the stream light.
+                </TruncationNote>
+              ) : null}
+            </>
+          )}
+        </DetailSection>
+      ) : null}
+
       <div>
-        <Link
-          href={`/logs/${event.id}`}
-          className="text-primary hover:text-primary/80 focus-visible:ring-ring rounded-sm text-xs font-medium underline underline-offset-2 focus-visible:ring-2 focus-visible:outline-none"
-        >
+        <FullEventLink eventId={event.id}>
           {event.hasContext
             ? "View full event, including context"
             : "View full event"}
-        </Link>
+        </FullEventLink>
       </div>
     </div>
+  );
+}
+
+function DetailSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+/** The pointer to the event's own page, where nothing is bounded. */
+function FullEventLink({
+  eventId,
+  children,
+}: {
+  eventId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={`/logs/${eventId}`}
+      className="text-primary hover:text-primary/80 focus-visible:ring-ring rounded-sm text-xs font-medium underline underline-offset-2 focus-visible:ring-2 focus-visible:outline-none"
+    >
+      {children}
+    </Link>
+  );
+}
+
+/**
+ * Says a value was bounded for the stream, and where the complete one is.
+ *
+ * Truncation is never silent: a stack trace that stops mid-frame reads as a
+ * fact about the error rather than a fact about the payload budget.
+ */
+function TruncationNote({
+  eventId,
+  linkText,
+  children,
+}: {
+  eventId: string;
+  linkText: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <p className="text-muted-foreground text-xs">
+      {children} <FullEventLink eventId={eventId}>{linkText}</FullEventLink>
+    </p>
   );
 }
 

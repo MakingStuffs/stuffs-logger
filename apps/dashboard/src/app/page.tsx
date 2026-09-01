@@ -16,6 +16,10 @@ import {
   OVERVIEW_WINDOW_MS,
 } from "@/components/overview/activity";
 import { ApplicationActivityCards } from "@/components/overview/application-activity-cards";
+import {
+  AccessRefused,
+  resolveAccess,
+} from "@/components/ui-states/access-refused";
 import { CardGridSkeleton } from "@/components/ui-states/card-grid-skeleton";
 import { EmptyState } from "@/components/ui-states/empty-state";
 import { APP_SLUG } from "@/constants/environment";
@@ -77,10 +81,17 @@ async function OverviewContent({ session }: { session: SalientSession }) {
   const to = new Date();
   const from = new Date(to.getTime() - OVERVIEW_WINDOW_MS);
 
-  const [applications, activity] = await Promise.all([
-    listApplications(session),
-    getApplicationActivity(session, { from, to }),
-  ]);
+  // Both reads refuse a non-internal session by throwing. That refusal is a
+  // state this page renders, not a failure for the error boundary.
+  const outcome = await resolveAccess(() =>
+    Promise.all([
+      listApplications(session),
+      getApplicationActivity(session, { from, to }),
+    ]),
+  );
+  if (!outcome.allowed) return <AccessRefused code={outcome.code} />;
+
+  const [applications, activity] = outcome.data;
 
   if (applications.length === 0) {
     return (

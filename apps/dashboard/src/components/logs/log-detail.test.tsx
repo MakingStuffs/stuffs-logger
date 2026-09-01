@@ -1,38 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { LogEventDetail } from "@/lib/logs/dto";
-
 import { LogDetail } from "./log-detail";
-
-function makeEvent(overrides: Partial<LogEventDetail> = {}): LogEventDetail {
-  return {
-    id: "event-1",
-    applicationId: "app-1",
-    applicationSlug: "checkout",
-    applicationName: "Checkout",
-    timestamp: "2026-01-15T09:31:04.000Z",
-    receivedAt: "2026-01-15T09:31:05.000Z",
-    level: "error",
-    message: "Payment provider timed out",
-    logger: "manual",
-    environment: "production",
-    release: "1.4.2",
-    source: "browser",
-    sessionId: "session-1",
-    url: "https://shop.example.test/checkout",
-    deviceType: "mobile",
-    os: "iOS 18",
-    browser: "Safari",
-    errorName: "TimeoutError",
-    hasContext: true,
-    userAgent: "Mozilla/5.0",
-    context: { orderId: "abc-123" },
-    errorMessage: "Timed out after 30s",
-    errorStack: "TimeoutError: Timed out\n    at pay (checkout.js:14:9)",
-    ...overrides,
-  };
-}
+import { makeLogEventDetail as makeEvent } from "./log-event-fixtures";
 
 describe("LogDetail", () => {
   it("shows the message", () => {

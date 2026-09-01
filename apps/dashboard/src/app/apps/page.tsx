@@ -11,6 +11,10 @@ import { Suspense } from "react";
 import { AppShell } from "@/components/app-shell";
 import { ApplicationList } from "@/components/apps/application-list";
 import { LOGS_PATH } from "@/components/logs/search-params";
+import {
+  AccessRefused,
+  resolveAccess,
+} from "@/components/ui-states/access-refused";
 import { CardGridSkeleton } from "@/components/ui-states/card-grid-skeleton";
 import { EmptyState } from "@/components/ui-states/empty-state";
 import { APP_SLUG } from "@/constants/environment";
@@ -49,7 +53,10 @@ export default async function ApplicationsPage() {
 }
 
 async function ApplicationsContent({ session }: { session: SalientSession }) {
-  const applications = await listApplications(session);
+  const outcome = await resolveAccess(() => listApplications(session));
+  if (!outcome.allowed) return <AccessRefused code={outcome.code} />;
+
+  const applications = outcome.data;
 
   if (applications.length === 0) {
     return (

@@ -9,12 +9,13 @@ import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { IngestKeysSection } from "@/components/apps/ingest-keys-section";
-import type { IngestKeyAccess } from "@/components/apps/ingest-keys-section";
 import { applicationLogsHref } from "@/components/logs/search-params";
+import {
+  AccessRefused,
+  resolveAccess,
+} from "@/components/ui-states/access-refused";
 import { APP_SLUG } from "@/constants/environment";
-import { isApiError } from "@/lib/api/errors";
 import { getApplicationBySlug, listIngestKeys } from "@/lib/apps/queries";
-import type { SalientSession } from "@journey-further/salient-auth/server";
 
 export const metadata: Metadata = {
   title: "Application",
@@ -23,10 +24,10 @@ export const metadata: Metadata = {
 /**
  * One application: what it is, and the credentials that write into it.
  *
- * Anyone who can read logs can see the application. Key management is narrower
- * — an ingest key is a write credential — so the data layer refuses it for
- * non-internal callers and this page shows that refusal as a state rather than
- * an error page.
+ * Both reads — the application and its keys — are gated on internal staff, so
+ * they are resolved together: a caller who may see the application may see its
+ * keys, and a caller who may not sees the refusal state instead of an error
+ * page.
  */
 export default async function ApplicationPage({
   params,
@@ -39,10 +40,36 @@ export default async function ApplicationPage({
     returnPath: `/apps/${encodeURIComponent(slug)}`,
   });
 
-  const application = await getApplicationBySlug(session, slug);
-  if (application === null) notFound();
+  const outcome = await resolveAccess(async () => {
+    const application = await getApplicationBySlug(session, slug);
+    if (application === null) return null;
 
-  const access = await resolveIngestKeyAccess(session, application.id);
+    return { application, keys: await listIngestKeys(session, application.id) };
+  });
+
+  if (!outcome.allowed) {
+    return (
+      <AppShell user={session.user}>
+        <AppHeader
+          header="Application"
+          copy="An application that sends logs to JF Logger."
+          icon={Boxes}
+          breadcrumbs={[
+            { label: "Applications", href: "/apps" },
+            { label: "Application" },
+          ]}
+        />
+        <PageContentWrapper className="px-6 py-8">
+          <AccessRefused code={outcome.code} />
+        </PageContentWrapper>
+      </AppShell>
+    );
+  }
+
+  // `notFound` signals by throwing, so the loader returns null for a missing
+  // slug and the page raises it out here, clear of the refusal catch.
+  if (outcome.data === null) notFound();
+  const { application, keys } = outcome.data;
 
   return (
     <AppShell user={session.user}>
@@ -67,33 +94,8 @@ export default async function ApplicationPage({
       </AppHeader>
 
       <PageContentWrapper className="flex flex-col gap-8 px-6 py-8">
-        <IngestKeysSection application={application} access={access} />
+        <IngestKeysSection application={application} keys={keys} />
       </PageContentWrapper>
     </AppShell>
   );
-}
-
-/**
- * Resolves the key list, turning the data layer's refusal into a state.
- *
- * `listIngestKeys` throws `FORBIDDEN` for a non-internal caller. That is the
- * correct behaviour for a data-access function — it must not quietly return an
- * empty list, which would read as "no keys exist" — but on a page it is an
- * outcome to render, not a 500.
- */
-async function resolveIngestKeyAccess(
-  session: SalientSession,
-  applicationId: string,
-): Promise<IngestKeyAccess> {
-  try {
-    return {
-      allowed: true,
-      keys: await listIngestKeys(session, applicationId),
-    };
-  } catch (error) {
-    if (isApiError(error) && error.code === "FORBIDDEN") {
-      return { allowed: false, message: error.message };
-    }
-    throw error;
-  }
 }

@@ -5,30 +5,13 @@ import type { LogEventListItem, LogEventPage } from "@/lib/logs/dto";
 import { DEFAULT_PAGE_SIZE } from "@/lib/logs/filters";
 import type { LogFilters } from "@/lib/logs/filters";
 
+import { makeLogEventListItem } from "./log-event-fixtures";
 import { LogPagination } from "./log-pagination";
 
 function makeItems(count: number): LogEventListItem[] {
-  return Array.from({ length: count }, (_, index) => ({
-    id: `event-${index}`,
-    applicationId: "app-1",
-    applicationSlug: "checkout",
-    applicationName: "Checkout",
-    timestamp: "2026-01-15T09:31:04.000Z",
-    receivedAt: "2026-01-15T09:31:05.000Z",
-    level: "info" as const,
-    message: "Hello",
-    logger: "manual" as const,
-    environment: "production",
-    release: null,
-    source: "browser" as const,
-    sessionId: null,
-    url: null,
-    deviceType: null,
-    os: null,
-    browser: null,
-    errorName: null,
-    hasContext: false,
-  }));
+  return Array.from({ length: count }, (_, index) =>
+    makeLogEventListItem({ id: `event-${index}` }),
+  );
 }
 
 function makePage(overrides: Partial<LogEventPage> = {}): LogEventPage {
