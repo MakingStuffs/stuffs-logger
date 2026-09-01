@@ -1,5 +1,9 @@
 "use client";
 
+import { useCallback, useState } from "react";
+
+import type { LogEventListItem } from "@/lib/logs/dto";
+
 import {
   Table,
   TableBody,
@@ -7,10 +11,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@journey-further/salient-ui/ui/table";
-import { useCallback, useState } from "react";
-
-import type { LogEventListItem } from "@/lib/logs/dto";
+} from "../ui/table";
 
 import { LogRow } from "./log-row";
 

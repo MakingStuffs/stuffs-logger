@@ -1,6 +1,3 @@
-import { AppHeader } from "@journey-further/salient-ui/components/app-header";
-import { Button } from "@journey-further/salient-ui/ui/button";
-import { PageContentWrapper } from "@journey-further/salient-ui/ui/page-content-wrapper";
 import { Boxes, ScrollText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -13,6 +10,9 @@ import {
   AccessRefused,
   resolveAccess,
 } from "@/components/ui-states/access-refused";
+import { AppHeader } from "@/components/shell/app-header";
+import { Button } from "@/components/ui/button";
+import { PageContentWrapper } from "@/components/ui/page-content-wrapper";
 import { getApplicationBySlug, listIngestKeys } from "@/lib/apps/queries";
 import { getSessionOrRedirect } from "@/lib/auth/session";
 

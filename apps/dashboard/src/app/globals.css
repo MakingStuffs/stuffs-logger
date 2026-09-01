@@ -1,9 +1,282 @@
 /*
- * The Salient UI package globals are the single source of truth for the brand:
- * Tailwind v4 entry, brand tokens, the brand type faces and the base element
- * layer. Nothing brand-related belongs in this file — add tokens to salient-ui
- * instead, so the whole suite gets them.
+ * Stuffs Logger — Tailwind v4 entry and design tokens.
+ *
+ * This file is the single source of truth for the product's visual identity:
+ * the Tailwind entry point, the semantic colour tokens, the type stacks, the
+ * geometry scale and the base element layer. Components never name a colour,
+ * a radius or a font — they name a MEANING (`bg-card`, `text-muted-foreground`,
+ * `border-destructive`) and this file decides what that means.
+ *
+ * Design direction: a log viewer is a surface people stare at for an hour
+ * while something is on fire. So: a near-neutral cool grey ground, one accent
+ * (blue) reserved for the primary action and focus, and a severity ramp that
+ * gets louder as the level gets worse. Nothing decorative competes with the
+ * text, because the text is the product.
+ *
+ * Light and dark are expressed with the CSS `light-dark()` function over a
+ * single `color-scheme: light dark` declaration, so:
+ *   - every token is declared exactly once and the two themes cannot drift;
+ *   - the OS preference is honoured with no JavaScript, no flash of the wrong
+ *     theme and no hydration cost;
+ *   - native controls (the `<select>` and `datetime-local` inputs the
+ *     zero-JavaScript filter panel is built from) theme themselves correctly.
+ *
+ * Forcing a theme is a matter of setting `color-scheme` on an ancestor, which
+ * the `[data-theme]` rules below do — `light-dark()` resolves against the used
+ * value, so an overridden subtree flips wholesale without a second palette.
+ *
+ * Section order:
+ *   1. Tailwind entry and source scanning
+ *   2. Semantic tokens (:root)
+ *   3. @theme inline — Tailwind token declarations
+ *   4. @layer base — element defaults
+ *   5. Keyframes backing the --animate-* tokens
  */
-@import "@journey-further/salient-ui/globals-css";
+
+@import "tailwindcss";
 
 @source "../";
+
+/* -------------------------------------------------------------------------- */
+/* Semantic tokens                                                            */
+/*                                                                            */
+/* Colours are OKLCH: perceptually uniform, so one lightness step looks like   */
+/* the same step at every hue — which is what keeps the greys neutral and the  */
+/* severity ramp evenly spaced.                                               */
+/* -------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light dark;
+
+  /* Ground and content. The page is a hair cooler and darker than pure white
+     so cards can be pure white and still read as raised without a shadow. */
+  --background: light-dark(oklch(0.985 0.002 260), oklch(0.171 0.008 265));
+  --foreground: light-dark(oklch(0.216 0.012 265), oklch(0.936 0.004 260));
+
+  --card: light-dark(oklch(1 0 0), oklch(0.212 0.01 265));
+  --card-foreground: var(--foreground);
+
+  --popover: light-dark(oklch(1 0 0), oklch(0.229 0.011 265));
+  --popover-foreground: var(--foreground);
+
+  /* The one accent. Blue, because it is the only hue in a log viewer that is
+     not already spoken for by a severity. */
+  --primary: light-dark(oklch(0.548 0.184 259), oklch(0.696 0.148 254));
+  --primary-foreground: light-dark(
+    oklch(0.99 0.002 260),
+    oklch(0.171 0.02 265)
+  );
+
+  /* Quiet chips and neutral fills. */
+  --secondary: light-dark(oklch(0.948 0.005 265), oklch(0.281 0.012 265));
+  --secondary-foreground: light-dark(
+    oklch(0.31 0.014 265),
+    oklch(0.902 0.006 260)
+  );
+
+  /* Recessed surfaces: code blocks, expanded rows, skeletons. */
+  --muted: light-dark(oklch(0.958 0.004 265), oklch(0.253 0.011 265));
+  --muted-foreground: light-dark(
+    oklch(0.503 0.017 265),
+    oklch(0.706 0.014 262)
+  );
+
+  /* Hover wash and low-emphasis highlight. Never a text colour on its own. */
+  --accent: light-dark(oklch(0.944 0.018 258), oklch(0.3 0.028 262));
+  --accent-foreground: light-dark(
+    oklch(0.352 0.086 259),
+    oklch(0.902 0.028 258)
+  );
+
+  /* Severity. `warning` sits between the neutral levels and the red ones, so
+     `warn` never has to borrow the accent and pretend to be an action. */
+  --warning: light-dark(oklch(0.708 0.152 71), oklch(0.786 0.144 76));
+  --warning-foreground: light-dark(oklch(0.28 0.062 60), oklch(0.22 0.04 70));
+
+  --destructive: light-dark(oklch(0.554 0.213 26), oklch(0.63 0.196 25));
+  --destructive-foreground: light-dark(
+    oklch(0.99 0.004 60),
+    oklch(0.166 0.02 25)
+  );
+
+  /*
+   * Lines, fields, focus.
+   *
+   * TWO border tokens, and the distinction is an accessibility one rather
+   * than a stylistic one:
+   *
+   *   --border  divides surfaces (cards, table rows, rules). Decorative, so a
+   *             hairline at roughly 1.4:1 is correct — strong enough to read
+   *             as structure, quiet enough to disappear behind the data.
+   *   --control draws the boundary of something you can operate (a field, an
+   *             outline button, a filter chip). WCAG 1.4.11 requires that at
+   *             3:1 against its surroundings, which the value below clears
+   *             against the page, a card, and a field's own fill.
+   *
+   * Using --border on a control is therefore a bug, not a preference.
+   */
+  --border: light-dark(oklch(0.885 0.007 265), oklch(0.335 0.013 265));
+  --control: light-dark(oklch(0.62 0.012 265), oklch(0.55 0.016 265));
+
+  /* A field's fill, not its edge. */
+  --input: light-dark(oklch(1 0 0), oklch(0.237 0.011 265));
+
+  --ring: var(--primary);
+
+  /* Geometry. Small radii throughout — a dense table looks wrong with soft
+     corners, and pills are reserved for chips where the shape carries the
+     "one of a set" meaning. */
+  --radius: 0.375rem;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tailwind token declarations                                                */
+/*                                                                            */
+/* `inline` matters: it makes the generated utilities emit `var(--background)` */
+/* rather than the value resolved at build time, which is what lets a          */
+/* `color-scheme` override re-theme a subtree.                                */
+/* -------------------------------------------------------------------------- */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-control: var(--control);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /*
+   * Type. System stacks on purpose: they are already installed, so there is
+   * no webfont request, no `font-display` swap and therefore no font-driven
+   * layout shift on a page whose whole job is to render text fast. The UI face
+   * is the reader's own; the data face is their terminal's, which is exactly
+   * what a stack trace should look like.
+   */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", "Noto Sans", Arial, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji";
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    "Roboto Mono", monospace;
+
+  /* Radius scale, derived from one value so the whole UI tightens or softens
+     together. */
+  --radius-xs: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+
+  /* Motion. Short, compositor-only (opacity and transform), and always gated
+     behind `motion-safe:` at the call site. */
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-fade-out: fade-out 120ms ease-in;
+  --animate-dialog-in: dialog-in 180ms ease-out;
+  --animate-dialog-out: dialog-out 140ms ease-in;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Base layer                                                                 */
+/* -------------------------------------------------------------------------- */
+
+@layer base {
+  /*
+   * Tailwind v4 defaults an unqualified `border` to `currentColor`. Every
+   * border in this app means "a division between surfaces", so the default is
+   * pinned to the token instead and `border` on its own stays correct.
+   */
+  *,
+  ::before,
+  ::after {
+    @apply border-border;
+  }
+
+  /* Focus is never invisible: components draw their own ring, and this is the
+     floor for anything that forgets. */
+  :focus-visible {
+    @apply outline-ring outline-2 outline-offset-2;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Timestamps, counts and severities sit in columns; lining figures stop them
+     jittering as the digits change. */
+  code,
+  kbd,
+  pre,
+  samp {
+    @apply font-mono;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Keyframes backing the --animate-* tokens                                   */
+/* -------------------------------------------------------------------------- */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -46%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes dialog-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -46%) scale(0.97);
+  }
+}

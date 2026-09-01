@@ -1,13 +1,13 @@
+import type { LogEventPage } from "@/lib/logs/dto";
+import type { LogFilters } from "@/lib/logs/filters";
+
 import {
   Pagination,
   PaginationContent,
   PaginationItem,
   PaginationLink,
   PaginationNext,
-} from "@journey-further/salient-ui/ui/pagination";
-
-import type { LogEventPage } from "@/lib/logs/dto";
-import type { LogFilters } from "@/lib/logs/filters";
+} from "../ui/pagination";
 
 import { formatCount } from "./format";
 import { firstPageHref, nextPageHref } from "./search-params";
@@ -50,7 +50,7 @@ export function LogPagination({
         <PaginationContent>
           {isFirstPage ? null : (
             <PaginationItem>
-              <PaginationLink size="default" href={firstPageHref(filters)}>
+              <PaginationLink href={firstPageHref(filters)}>
                 Newest
               </PaginationLink>
             </PaginationItem>

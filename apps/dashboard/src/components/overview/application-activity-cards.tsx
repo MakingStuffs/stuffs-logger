@@ -1,5 +1,11 @@
 import { ERROR_LEVELS } from "@stuffs-logger/core";
-import { Badge } from "@journey-further/salient-ui/ui/badge";
+import Link from "next/link";
+
+import type { ApplicationActivity, ApplicationSummary } from "@/lib/logs/dto";
+
+import { formatCount, formatErrorRate } from "../logs/format";
+import { applicationLogsHref } from "../logs/search-params";
+import { Badge } from "../ui/badge";
 import {
   Card,
   CardContent,
@@ -7,13 +13,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@journey-further/salient-ui/ui/card";
-import Link from "next/link";
-
-import type { ApplicationActivity, ApplicationSummary } from "@/lib/logs/dto";
-
-import { formatCount, formatErrorRate } from "../logs/format";
-import { applicationLogsHref } from "../logs/search-params";
+} from "../ui/card";
 
 import {
   hasElevatedErrorRate,

@@ -1,13 +1,9 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@journey-further/salient-ui/ui/card";
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 
 import type { LogEventDetail } from "@/lib/logs/dto";
+
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 
 import {
   DEVICE_LABELS,

@@ -23,7 +23,7 @@
  *     changes: the policy, the nonce plumbing and the header value are already
  *     what enforcement would use.
  *
- * `style-src` allows inline styles because Tailwind and salient-ui both emit
+ * `style-src` allows inline styles because Tailwind emits
  * them; that is a known, documented weakening rather than an oversight, and it
  * does not undermine `script-src`.
  *

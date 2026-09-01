@@ -5,9 +5,10 @@ import type {
   LogLevel,
   LogSource,
 } from "@stuffs-logger/core";
-import type { BadgeProps } from "@journey-further/salient-ui/ui/badge";
 
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/logs/filters";
+
+import type { BadgeProps } from "../ui/badge";
 
 /**
  * The vocabulary the log explorer's UI shares with the URL.
@@ -77,14 +78,19 @@ export const LOGGER_LABELS = {
  * Design-system variants only — a level must never be signalled by a colour
  * this app invented, and never by colour alone: the badge always carries the
  * level's name as text.
+ *
+ * The mapping walks the badge's loudness ramp in severity order, so a column
+ * of levels can be read by weight before it is read by word: the two levels
+ * nobody triages by are the quietest, and `fatal` is the only thing on the
+ * page allowed to be the loudest.
  */
 export const LEVEL_BADGE_VARIANT = {
   trace: "outline",
   debug: "outline",
   info: "secondary",
-  warn: "default",
+  warn: "warning",
   error: "destructive",
-  fatal: "destructive",
+  fatal: "critical",
 } as const satisfies Record<LogLevel, NonNullable<BadgeProps["variant"]>>;
 
 /** Ordered severity options for the filter panel. Most severe first: the

@@ -101,16 +101,16 @@ export type { Logger, LoggerOptions } from "./types";
  */
 function scriptOptions(): InitOptions | undefined {
   const dataset = globalThis.document?.currentScript?.dataset;
-  const apiKey = dataset?.jfKey;
+  const apiKey = dataset?.slgKey;
   if (!apiKey) return undefined;
 
-  const { jfEndpoint, jfEnvironment, jfRelease } = dataset;
+  const { slgEndpoint, slgEnvironment, slgRelease } = dataset;
 
   return {
     apiKey,
-    ...(jfEndpoint !== undefined && { endpoint: jfEndpoint }),
-    ...(jfEnvironment !== undefined && { environment: jfEnvironment }),
-    ...(jfRelease !== undefined && { release: jfRelease }),
+    ...(slgEndpoint !== undefined && { endpoint: slgEndpoint }),
+    ...(slgEnvironment !== undefined && { environment: slgEnvironment }),
+    ...(slgRelease !== undefined && { release: slgRelease }),
   };
 }
 

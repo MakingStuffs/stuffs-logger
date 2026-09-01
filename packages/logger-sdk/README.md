@@ -219,9 +219,9 @@ No build step, no module system. The bundle configures itself from its own
 ```html
 <script
   src="https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js"
-  data-jf-key="slg_pub_…"
-  data-jf-endpoint="https://logs.example.com"
-  data-jf-environment="production"
+  data-slg-key="slg_pub_…"
+  data-slg-endpoint="https://logs.example.com"
+  data-slg-environment="production"
 ></script>
 ```
 

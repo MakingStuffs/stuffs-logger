@@ -9,12 +9,13 @@ import { EmptyState } from "./empty-state";
 /**
  * Turning the data layer's refusal into a designed page state.
  *
- * Every read in this app is gated on `assertInternalViewer` and THROWS for a
- * caller who is signed in but is not Making Stuffs staff. That is the right
- * shape for a data-access function — quietly returning nothing would read as
- * "there are no logs" — but on a page it is an outcome to render, not a fault:
- * letting it reach `error.tsx` would tell a colleague that Stuffs Logger is broken
- * when it is working exactly as designed.
+ * The gates in `lib/access.ts` refuse by THROWING — `assertActiveViewer` for a
+ * deactivated account, `assertAdminViewer` for a member who reached ingest-key
+ * management. That is the right shape for a data-access function, because
+ * quietly returning nothing would read as "there are no keys". On a page it is
+ * an outcome to render rather than a fault: letting it reach `error.tsx` would
+ * tell a colleague that Stuffs Logger is broken when it is working exactly as
+ * designed.
  */
 
 /** The refusals a page renders rather than throwing. */
@@ -73,9 +74,9 @@ interface RefusalCopy {
 const REFUSAL_COPY: Readonly<Record<AccessRefusalCode, RefusalCopy>> = {
   FORBIDDEN: {
     icon: ShieldAlert,
-    title: "Making Stuffs staff only",
+    title: "Administrators only",
     description:
-      "Stuffs Logger is an internal engineering tool. A log line carries whatever an application logged — request paths, identifiers, error payloads — and ingest keys are write credentials on top of that, so only Making Stuffs staff can read them. Nothing has gone wrong; if you think your account should have access, ask whoever runs Stuffs Logger to check its scope.",
+      "Your account can read every application's logs, but not manage its ingest keys. A key is a live write credential, and revoking one silently stops a production application logging, so minting and revoking them is held at the administrator role. Nothing has gone wrong; if you need to manage keys, ask an administrator to do it or to change your role.",
   },
   UNAUTHORIZED: {
     icon: UserX,

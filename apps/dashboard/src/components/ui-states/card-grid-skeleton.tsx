@@ -1,4 +1,4 @@
-import { Skeleton } from "@journey-further/salient-ui/ui/skeleton";
+import { Skeleton } from "../ui/skeleton";
 
 /** Cards drawn while a grid loads. */
 const DEFAULT_CARD_COUNT = 3;

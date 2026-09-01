@@ -7,7 +7,7 @@ import type { NextConfig } from "next";
  * anything added here widens that check, and every action in this app is
  * internal-only — `revokeIngestKeyAction` included.
  *
- * THE PORTAL ORIGIN IS DELIBERATELY ABSENT. It was here for salient-ui's
+ * THE PORTAL ORIGIN IS DELIBERATELY ABSENT. It was here for the former design system's
  * sign-out, but that action is defined inline in this app's own `AppShell` and
  * is therefore posted from a page served on THIS origin; the portal never
  * renders it. This app has also exited the portal proxy, so no page of ours is

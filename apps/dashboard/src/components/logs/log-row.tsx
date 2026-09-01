@@ -1,12 +1,13 @@
 "use client";
 
-import { cn } from "@journey-further/salient-ui/lib";
-import { TableCell, TableRow } from "@journey-further/salient-ui/ui/table";
 import { ChevronRight, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { Fragment, memo } from "react";
 
 import type { LogEventListItem } from "@/lib/logs/dto";
+
+import { TableCell, TableRow } from "../ui/table";
+import { cn } from "../ui/utils";
 
 import {
   DEVICE_LABELS,

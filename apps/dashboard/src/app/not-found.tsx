@@ -1,6 +1,7 @@
-import { Button } from "@journey-further/salient-ui/ui/button";
 import { FileQuestion } from "lucide-react";
 import Link from "next/link";
+
+import { Button } from "@/components/ui/button";
 
 /** The 404 page. Standalone, because a missing route may be missing a session too. */
 export default function NotFound() {

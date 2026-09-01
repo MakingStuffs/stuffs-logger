@@ -1,8 +1,9 @@
-import { Button } from "@journey-further/salient-ui/ui/button";
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 
 import type { FilterIssue } from "@/lib/logs/filters";
+
+import { Button } from "../ui/button";
 
 import { LOGS_PATH } from "./search-params";
 

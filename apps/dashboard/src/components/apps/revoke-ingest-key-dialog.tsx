@@ -1,6 +1,11 @@
 "use client";
 
-import { Button } from "@journey-further/salient-ui/ui/button";
+import { useActionState, useEffect, useState } from "react";
+
+import { revokeIngestKeyAction } from "@/lib/apps/actions";
+import type { IngestKeyActionResult } from "@/lib/apps/actions";
+
+import { Button } from "../ui/button";
 import {
   Dialog,
   DialogContent,
@@ -9,13 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@journey-further/salient-ui/ui/dialog";
-import { Input } from "@journey-further/salient-ui/ui/input";
-import { SubmitButton } from "@journey-further/salient-ui/ui/submit-button";
-import { useActionState, useEffect, useState } from "react";
-
-import { revokeIngestKeyAction } from "@/lib/apps/actions";
-import type { IngestKeyActionResult } from "@/lib/apps/actions";
+} from "../ui/dialog";
+import { Input } from "../ui/input";
+import { SubmitButton } from "../ui/submit-button";
 
 const INITIAL_RESULT: IngestKeyActionResult = { status: "idle" };
 

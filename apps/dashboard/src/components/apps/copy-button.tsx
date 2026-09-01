@@ -1,8 +1,9 @@
 "use client";
 
-import { Button } from "@journey-further/salient-ui/ui/button";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
+
+import { Button } from "../ui/button";
 
 /** How long the confirmation stays on the button, in milliseconds. */
 const CONFIRMATION_MS = 2_000;

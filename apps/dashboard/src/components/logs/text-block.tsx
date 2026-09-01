@@ -1,4 +1,4 @@
-import { cn } from "@journey-further/salient-ui/lib";
+import { cn } from "../ui/utils";
 
 /**
  * A block of untrusted text — a context blob, a stack trace, a user agent.
@@ -29,8 +29,10 @@ export function TextBlock({
       role="group"
       aria-label={label}
       className={cn(
-        "bg-muted text-muted-foreground max-h-96 overflow-auto rounded-sm p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap",
-        "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+        // Full-contrast text on a recessed surface: the block is set apart by
+        // its background, never by dimming the thing you came here to read.
+        "bg-muted text-foreground max-h-96 overflow-auto rounded-md border p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap",
+        "focus-visible:border-ring focus-visible:ring-ring/40 focus-visible:ring-2 focus-visible:outline-none",
         className,
       )}
     >

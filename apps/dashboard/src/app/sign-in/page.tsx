@@ -1,6 +1,10 @@
+import { Terminal, TriangleAlert } from "lucide-react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { APP_DISPLAY_NAME } from "@/constants/environment";
 import { isGoogleConfigured } from "@/lib/auth/auth";
 import { RETURN_TO_PARAM, resolveReturnPath } from "@/lib/auth/return-path";
 import { getSession } from "@/lib/auth/session";
@@ -19,12 +23,12 @@ export const metadata: Metadata = {
 /**
  * The sign-in page.
  *
- * DELIBERATELY PLAIN. Every element here is raw HTML with Tailwind classes and
- * no client-side JavaScript: the form posts to a Server Action, the action
- * redirects, and failures come back as a query parameter this page renders.
- * That means it works before hydration, cannot double-submit a password into a
- * stale client state, and is trivial to restyle — the design-system pass is a
- * separate piece of work and should not have to unpick behaviour to do it.
+ * ZERO CLIENT JAVASCRIPT, which is the property to protect when editing it.
+ * The form posts to a Server Action, the action redirects, and failures come
+ * back as a query parameter this page renders. It therefore works before
+ * hydration and cannot double-submit a password into a stale client state.
+ * `Input` and `Button` are styling over native elements with no `"use client"`
+ * of their own, so composing them keeps that property intact.
  *
  * NO SIGN-UP LINK, because there is no sign-up. A `MEMBER` reads every
  * application's logs, so self-service registration would hand the contents of
@@ -63,10 +67,8 @@ function toSignInError(value: string | undefined): SignInError | undefined {
   return SIGN_IN_ERRORS.find((known) => known === value);
 }
 
-const FIELD_CLASS =
-  "w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-900 focus:ring-2 focus:ring-neutral-900/20";
-
-const LABEL_CLASS = "block text-sm font-medium text-neutral-900";
+/** Field labels, styled once so the two fields cannot drift apart. */
+const LABEL_CLASS = "block text-sm leading-none font-medium";
 
 export default async function SignInPage({
   searchParams,
@@ -88,61 +90,70 @@ export default async function SignInPage({
   const googleAvailable = isGoogleConfigured();
 
   return (
-    <main className="flex min-h-svh items-center justify-center bg-neutral-50 px-4 py-12">
-      <div className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-8 shadow-sm">
-        <h1 className="text-xl font-semibold text-neutral-900">
-          Sign in to Stuffs Logger
-        </h1>
-        <p className="mt-2 text-sm text-neutral-600">
+    <main className="flex min-h-svh flex-col items-center justify-center gap-6 px-4 py-12">
+      <div className="flex items-center gap-2">
+        <span className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
+          <Terminal className="size-5" aria-hidden="true" />
+        </span>
+        <span className="text-base font-semibold tracking-tight">
+          {APP_DISPLAY_NAME}
+        </span>
+      </div>
+
+      <div className="bg-card w-full max-w-sm rounded-lg border p-8">
+        <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
+        <p className="text-muted-foreground mt-2 text-sm">
           Accounts are created by whoever runs this deployment.
         </p>
 
         {error === undefined ? null : (
           <p
             role="alert"
-            className="mt-6 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+            className="border-destructive/40 bg-destructive/10 text-destructive mt-6 flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
           >
-            {ERROR_MESSAGES[error]}
+            <TriangleAlert
+              className="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span>{ERROR_MESSAGES[error]}</span>
           </p>
         )}
 
-        <form action={signInWithPasswordAction} className="mt-6 space-y-4">
+        <form
+          action={signInWithPasswordAction}
+          className="mt-6 flex flex-col gap-4"
+        >
           <input type="hidden" name={RETURN_TO_PARAM} value={returnPath} />
 
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1.5">
             <label className={LABEL_CLASS} htmlFor="email">
               Email address
             </label>
-            <input
+            <Input
               id="email"
               name="email"
               type="email"
               autoComplete="username"
               required
-              className={FIELD_CLASS}
             />
           </div>
 
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1.5">
             <label className={LABEL_CLASS} htmlFor="password">
               Password
             </label>
-            <input
+            <Input
               id="password"
               name="password"
               type="password"
               autoComplete="current-password"
               required
-              className={FIELD_CLASS}
             />
           </div>
 
-          <button
-            type="submit"
-            className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 focus:ring-2 focus:ring-neutral-900/30 focus:outline-none"
-          >
+          <Button type="submit" className="mt-2 w-full">
             Sign in
-          </button>
+          </Button>
         </form>
 
         {/* Offered only when the credentials are actually configured: a button
@@ -150,19 +161,18 @@ export default async function SignInPage({
         {googleAvailable ? (
           <>
             <div className="my-6 flex items-center gap-3">
-              <span className="h-px flex-1 bg-neutral-200" />
-              <span className="text-xs text-neutral-500 uppercase">or</span>
-              <span className="h-px flex-1 bg-neutral-200" />
+              <span className="bg-border h-px flex-1" />
+              <span className="text-muted-foreground text-xs uppercase">
+                or
+              </span>
+              <span className="bg-border h-px flex-1" />
             </div>
 
             <form action={signInWithGoogleAction}>
               <input type="hidden" name={RETURN_TO_PARAM} value={returnPath} />
-              <button
-                type="submit"
-                className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-50 focus:ring-2 focus:ring-neutral-900/20 focus:outline-none"
-              >
+              <Button type="submit" variant="outline" className="w-full">
                 Continue with Google
-              </button>
+              </Button>
             </form>
           </>
         ) : null}

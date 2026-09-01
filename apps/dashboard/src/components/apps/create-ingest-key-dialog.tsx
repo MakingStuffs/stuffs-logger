@@ -1,6 +1,13 @@
 "use client";
 
-import { Button } from "@journey-further/salient-ui/ui/button";
+import { KeyRound, TriangleAlert } from "lucide-react";
+import { useActionState, useState } from "react";
+
+import { createIngestKeyAction } from "@/lib/apps/actions";
+import type { IngestKeyActionResult } from "@/lib/apps/actions";
+import type { IngestKeyType } from "@/lib/ingest/keys";
+
+import { Button } from "../ui/button";
 import {
   Dialog,
   DialogContent,
@@ -9,16 +16,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@journey-further/salient-ui/ui/dialog";
-import { Input } from "@journey-further/salient-ui/ui/input";
-import { SubmitButton } from "@journey-further/salient-ui/ui/submit-button";
-import { Textarea } from "@journey-further/salient-ui/ui/textarea";
-import { KeyRound, TriangleAlert } from "lucide-react";
-import { useActionState, useState } from "react";
-
-import { createIngestKeyAction } from "@/lib/apps/actions";
-import type { IngestKeyActionResult } from "@/lib/apps/actions";
-import type { IngestKeyType } from "@/lib/ingest/keys";
+} from "../ui/dialog";
+import { Input } from "../ui/input";
+import { SubmitButton } from "../ui/submit-button";
+import { Textarea } from "../ui/textarea";
 
 import { CopyButton } from "./copy-button";
 

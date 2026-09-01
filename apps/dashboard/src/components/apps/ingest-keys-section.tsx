@@ -1,4 +1,9 @@
-import { Badge } from "@journey-further/salient-ui/ui/badge";
+import { KeyRound } from "lucide-react";
+
+import type { ApplicationSummary, IngestKeySummary } from "@/lib/logs/dto";
+
+import { EMPTY_VALUE, formatUtcTimestampLong } from "../logs/format";
+import { Badge } from "../ui/badge";
 import {
   Table,
   TableBody,
@@ -7,12 +12,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@journey-further/salient-ui/ui/table";
-import { KeyRound } from "lucide-react";
-
-import type { ApplicationSummary, IngestKeySummary } from "@/lib/logs/dto";
-
-import { EMPTY_VALUE, formatUtcTimestampLong } from "../logs/format";
+} from "../ui/table";
 import { EmptyState } from "../ui-states/empty-state";
 
 import { CopyButton } from "./copy-button";

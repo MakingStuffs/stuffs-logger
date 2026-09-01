@@ -1,8 +1,9 @@
 "use client";
 
-import { Button } from "@journey-further/salient-ui/ui/button";
 import { TriangleAlert } from "lucide-react";
 import { useEffect } from "react";
+
+import { Button } from "@/components/ui/button";
 
 /**
  * The route error boundary.

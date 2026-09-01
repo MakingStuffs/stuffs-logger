@@ -12,11 +12,11 @@ describe("resolveAccess", () => {
     expect(outcome).toEqual({ allowed: true, data: ["checkout"] });
   });
 
-  it("turns the gate's refusal of a non-internal viewer into an outcome", async () => {
+  it("turns the gate's refusal of a non-administrator into an outcome", async () => {
     const outcome = await resolveAccess(() => {
       throw new ApiError(
         "FORBIDDEN",
-        "Only Making Stuffs staff can use stuffs-logger.",
+        "Only an administrator can manage ingest keys.",
       );
     });
 
@@ -51,20 +51,28 @@ describe("resolveAccess", () => {
 });
 
 describe("AccessRefused", () => {
-  it("tells a non-internal viewer the tool is staff-only, not broken", () => {
+  it("tells a member that key management is closed, not broken", () => {
     render(<AccessRefused code="FORBIDDEN" />);
 
     expect(
-      screen.getByRole("heading", { name: "Making Stuffs staff only" }),
+      screen.getByRole("heading", { name: "Administrators only" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/internal engineering tool/i)).toBeInTheDocument();
+    expect(screen.getByText(/live write credential/i)).toBeInTheDocument();
   });
 
-  it("tells a non-internal viewer what to do next", () => {
+  it("does not suggest a member has lost access to the logs they can still read", () => {
     render(<AccessRefused code="FORBIDDEN" />);
 
     expect(
-      screen.getByText(/ask whoever runs Stuffs Logger to check its scope/i),
+      screen.getByText(/can read every application's logs/i),
+    ).toBeInTheDocument();
+  });
+
+  it("tells a member what to do next", () => {
+    render(<AccessRefused code="FORBIDDEN" />);
+
+    expect(
+      screen.getByText(/ask an administrator to do it or to change your role/i),
     ).toBeInTheDocument();
   });
 

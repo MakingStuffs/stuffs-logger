@@ -1,13 +1,14 @@
-import { Button } from "@journey-further/salient-ui/ui/button";
-import { formControlVariants } from "@journey-further/salient-ui/ui/form-control-variants";
-import { Input } from "@journey-further/salient-ui/ui/input";
-import { cn } from "@journey-further/salient-ui/lib";
 import { ChevronDown, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
 
 import type { ApplicationSummary } from "@/lib/logs/dto";
 import type { LogFilters } from "@/lib/logs/filters";
 import { MAX_SEARCH_LENGTH } from "@/lib/logs/filters";
+
+import { Button } from "../ui/button";
+import { formControlVariants } from "../ui/form-control-variants";
+import { Input } from "../ui/input";
+import { cn } from "../ui/utils";
 
 import {
   DEVICE_LABELS,
@@ -263,7 +264,7 @@ function QuickRangeLink({
   return (
     <Link
       href={href}
-      className="border-input hover:bg-muted focus-visible:ring-ring rounded-full border px-3 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none"
+      className="border-control text-muted-foreground hover:border-foreground/45 hover:bg-muted hover:text-foreground focus-visible:ring-ring/40 rounded-full border px-3 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none motion-reduce:transition-none"
     >
       {children}
     </Link>
@@ -338,7 +339,9 @@ function Chip({
         defaultChecked={checked}
         className="peer sr-only"
       />
-      <span className="border-input peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-ring inline-flex items-center rounded-full border px-3 py-1 text-xs transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2">
+      {/* A selected chip changes weight as well as fill, so the selection is
+          visible without relying on the colour difference alone. */}
+      <span className="border-control text-muted-foreground peer-hover:bg-muted peer-hover:text-foreground peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-checked:font-semibold peer-focus-visible:border-ring peer-focus-visible:ring-ring/40 inline-flex items-center rounded-full border px-3 py-1 text-xs transition-colors peer-focus-visible:ring-2 motion-reduce:transition-none">
         {label}
       </span>
     </label>

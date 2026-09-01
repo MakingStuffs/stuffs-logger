@@ -11,19 +11,6 @@ export default defineConfig({
     restoreMocks: true,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
-    server: {
-      deps: {
-        // salient-ui's dist uses extensionless relative imports, which Node's
-        // ESM resolver rejects. Inlining the package routes it through Vite's
-        // resolver instead, the same way webpack handles it in the app build.
-        //
-        // Scoped to salient-ui deliberately: nothing else in the tree needs
-        // it, and widening the pattern makes Vite read .js.map files whose
-        // `sources` a package may not publish, printing a screen of "points to
-        // missing source files" warnings on every run.
-        inline: [/@journey-further\/salient-ui/],
-      },
-    },
   },
   resolve: {
     alias: {

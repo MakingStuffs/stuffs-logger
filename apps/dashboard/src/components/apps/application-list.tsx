@@ -1,3 +1,9 @@
+import Link from "next/link";
+
+import type { ApplicationSummary } from "@/lib/logs/dto";
+
+import { formatUtcTimestampLong } from "../logs/format";
+import { applicationLogsHref } from "../logs/search-params";
 import {
   Card,
   CardContent,
@@ -5,13 +11,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@journey-further/salient-ui/ui/card";
-import Link from "next/link";
-
-import type { ApplicationSummary } from "@/lib/logs/dto";
-
-import { formatUtcTimestampLong } from "../logs/format";
-import { applicationLogsHref } from "../logs/search-params";
+} from "../ui/card";
 
 /** Every registered application, as a grid of cards. */
 export function ApplicationList({
