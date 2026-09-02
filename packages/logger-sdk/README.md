@@ -1,5 +1,9 @@
 # `@stuffs-logger/sdk`
 
+[![npm](https://img.shields.io/npm/v/@stuffs-logger/sdk)](https://www.npmjs.com/package/@stuffs-logger/sdk)
+[![Node](https://img.shields.io/node/v/@stuffs-logger/sdk)](https://nodejs.org)
+[![Licence](https://img.shields.io/npm/l/@stuffs-logger/sdk)](./LICENSE)
+
 The stuffs-logger client. One call sets it up, it runs the same way in Node, React,
 Next.js and a plain `<script>` tag, and it will not throw into your code no
 matter what goes wrong.
@@ -14,9 +18,11 @@ matter what goes wrong.
   an event is queued, a `slg_sec_` key is refused outright in the browser, a
   cleartext `http:` endpoint is refused off `localhost`, and no cookies are
   ever sent to the ingest endpoint.
-- **Small.** No runtime dependencies. Measured with `pnpm --filter @stuffs-logger/sdk size`:
-  6.22 KB gzipped for `createLogger` alone, 7.00 KB for the whole browser entry
-  point, 7.20 KB for the drop-in `<script>` build.
+- **Small.** No third-party code in the bundle: **6.23 KB** gzipped for
+  `createLogger` alone, **7.01 KB** for the whole browser entry point, **7.21 KB**
+  for the drop-in `<script>` build. Every build re-measures and records those
+  three figures in `dist/size.json`, which ships in the package — so you can
+  check them rather than take this paragraph's word for it.
 
 ---
 
@@ -25,6 +31,22 @@ matter what goes wrong.
 ```sh
 pnpm add @stuffs-logger/sdk
 ```
+
+You need a dashboard to send to, and an ingest key from it. See
+[the project README](https://github.com/MakingStuffs/stuffs-logger#readme) for
+running one.
+
+### About that dependency
+
+`package.json` lists exactly one: `@stuffs-logger/core`, the shared wire
+contract. Its **code** is inlined at build time, so nothing from it reaches
+your bundle — but the emitted type declarations still refer to it, so the
+dependency is real for TypeScript consumers and cannot be dropped.
+
+The honest consequence: installing this package also installs `zod`
+transitively, through the core. It is never imported at runtime and never
+appears in any of the bundles above — but it is in your `node_modules` and your
+lockfile, and calling that "zero dependencies" would be a lie.
 
 ## Keys
 
@@ -76,9 +98,9 @@ because the key is sent as a request header on every batch.
 
 ```ts
 import {
-  createLogger,
   captureConsole,
   captureErrors,
+  createLogger,
 } from "@stuffs-logger/sdk/node";
 
 const logger = createLogger({
@@ -112,7 +134,11 @@ Create the logger once, at module scope, and export it.
 
 ```ts
 // src/lib/logger.ts
-import { createLogger, captureConsole, captureErrors } from "@stuffs-logger/sdk";
+import {
+  captureConsole,
+  captureErrors,
+  createLogger,
+} from "@stuffs-logger/sdk";
 
 export const logger = createLogger({
   apiKey: import.meta.env.VITE_STUFFS_LOGGER_KEY, // slg_pub_…
@@ -156,7 +182,7 @@ client components. Use two modules so the browser never sees the secret key.
 ```ts
 // lib/logger.server.ts
 import "server-only";
-import { createLogger, captureErrors } from "@stuffs-logger/sdk/node";
+import { captureErrors, createLogger } from "@stuffs-logger/sdk/node";
 
 export const logger = createLogger({
   apiKey: process.env.STUFFS_LOGGER_API_KEY, // slg_sec_… — server env var, not NEXT_PUBLIC_
@@ -172,9 +198,9 @@ captureErrors(logger);
 // lib/logger.client.ts
 "use client";
 import {
-  createLogger,
   captureConsole,
   captureErrors,
+  createLogger,
 } from "@stuffs-logger/sdk/browser";
 
 export const logger = createLogger({
@@ -228,7 +254,16 @@ No build step, no module system. The bundle configures itself from its own
 That is the whole setup: `console.log`/`warn`/`error`, `window.onerror` and
 unhandled promise rejections are all captured from that point on.
 
-Prefer to configure it yourself? Drop the `data-*` attributes and call `init`:
+Pin a version (`@stuffs-logger/sdk@1.2.3/dist/…`) or serve the file from your
+own origin rather than tracking whatever the CDN's latest happens to be — the
+tag above executes with your page's privileges, so whoever controls that URL
+controls your page. Once there are published versions to pin, add an
+`integrity` hash and `crossorigin="anonymous"` next to the pinned version;
+nothing is published yet, so there is no real hash to quote here.
+
+Prefer to configure it yourself? Drop the `data-*` attributes and call `init`.
+Pin or self-host this URL as well; it is the same tag, with the same
+privileges:
 
 ```html
 <script src="https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js"></script>
@@ -254,25 +289,25 @@ call before `init` — they simply do nothing.
 
 Everything except the key has a working default.
 
-| Option            | Default                                                  | Notes                                                               |
-| ----------------- | -------------------------------------------------------- | ------------------------------------------------------------------- |
+| Option            | Default                                                      | Notes                                                               |
+| ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------------- |
 | `apiKey`          | `STUFFS_LOGGER_API_KEY` (Node)                               | `slg_pub_…` in browsers, `slg_sec_…` in Node                        |
 | `endpoint`        | Current origin (browser), `STUFFS_LOGGER_ENDPOINT` (Node)    | Origin or full ingest URL; both work                                |
 | `environment`     | `STUFFS_LOGGER_ENVIRONMENT`, `NODE_ENV`, else `"production"` | ≤ 64 characters                                                     |
 | `release`         | `STUFFS_LOGGER_RELEASE`                                      | ≤ 64 characters                                                     |
-| `minLevel`        | `"trace"`                                                | Events below it are discarded before any work is done               |
-| `sampleRate`      | `1`                                                      | `0`–`1`                                                             |
-| `sampleRates`     | —                                                        | Per-level overrides, e.g. `{ debug: 0.1 }`                          |
-| `batchSize`       | `20`                                                     | Queue length that triggers an early flush                           |
-| `flushIntervalMs` | `5000`                                                   | Idle flush cadence                                                  |
-| `maxQueueSize`    | `1000`                                                   | Hard memory bound; the oldest events are dropped                    |
-| `context`         | —                                                        | Static context merged into every event                              |
-| `autoContext`     | `true`                                                   | url/userAgent/viewport in the browser; hostname/pid/version in Node |
-| `sessionId`       | Persisted in `sessionStorage` (browser)                  | Supply your own to correlate with something you already have        |
-| `redaction`       | Enabled, built-in key list                               | `{ enabled, keys, additionalKeys, replacement }`                    |
-| `enabled`         | `true`                                                   | `false` builds an inert logger, useful in tests                     |
-| `onError`         | —                                                        | Called when the SDK swallows one of its own failures                |
-| `transport`       | HTTP                                                     | Inject your own to route batches through a proxy                    |
+| `minLevel`        | `"trace"`                                                    | Events below it are discarded before any work is done               |
+| `sampleRate`      | `1`                                                          | `0`–`1`                                                             |
+| `sampleRates`     | —                                                            | Per-level overrides, e.g. `{ debug: 0.1 }`                          |
+| `batchSize`       | `20`                                                         | Queue length that triggers an early flush                           |
+| `flushIntervalMs` | `5000`                                                       | Idle flush cadence                                                  |
+| `maxQueueSize`    | `1000`                                                       | Hard memory bound; the oldest events are dropped                    |
+| `context`         | —                                                            | Static context merged into every event                              |
+| `autoContext`     | `true`                                                       | url/userAgent/viewport in the browser; hostname/pid/version in Node |
+| `sessionId`       | Persisted in `sessionStorage` (browser)                      | Supply your own to correlate with something you already have        |
+| `redaction`       | Enabled, built-in key list                                   | `{ enabled, keys, additionalKeys, replacement }`                    |
+| `enabled`         | `true`                                                       | `false` builds an inert logger, useful in tests                     |
+| `onError`         | —                                                            | Called when the SDK swallows one of its own failures                |
+| `transport`       | HTTP                                                         | Inject your own to route batches through a proxy                    |
 
 ### Redaction
 
@@ -363,32 +398,38 @@ so it cannot re-enter the pipeline.
 
 ## Entry points
 
-| Import                     | Build                                 |
-| -------------------------- | ------------------------------------- |
-| `@stuffs-logger/sdk`           | Isomorphic; picks its runtime at load |
-| `@stuffs-logger/sdk/browser`   | DOM only                              |
-| `@stuffs-logger/sdk/node`      | Node only                             |
-| `dist/stuffs-logger.global.js` | IIFE exposing `window.StuffsLogger`       |
+Four, exactly as the package's `exports` map declares them:
 
-Browser bundlers are steered to the browser build automatically by the
-`browser` condition in `exports`; you only need `/browser` explicitly if your
-bundler ignores conditions.
+| Import                       | Build                                                               |
+| ---------------------------- | ------------------------------------------------------------------- |
+| `@stuffs-logger/sdk`         | Isomorphic; a bundler's `browser` condition picks the browser build |
+| `@stuffs-logger/sdk/browser` | DOM only                                                            |
+| `@stuffs-logger/sdk/node`    | Node only                                                           |
+| `@stuffs-logger/sdk/global`  | The minified IIFE that defines `window.StuffsLogger`                |
+
+ESM and CJS are both published for the first three, with matching `.d.ts` and
+`.d.cts`. You only need `/browser` explicitly if your bundler ignores export
+conditions.
+
+`/global` is the file the `<script>` tag above loads — it assigns a global and
+exports nothing, so it is a side-effect import rather than something to name
+bindings from. On a CDN it is
+`https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js`, which is
+also what bare `https://unpkg.com/@stuffs-logger/sdk` resolves to.
+
+Requires Node **≥ 22** for the Node entry point; the browser builds target
+ES2022.
 
 ---
 
-## Development
+## Source and issues
 
-```sh
-pnpm --filter @stuffs-logger/sdk test       # vitest, node + jsdom
-pnpm --filter @stuffs-logger/sdk typecheck
-pnpm --filter @stuffs-logger/sdk lint
-pnpm --filter @stuffs-logger/sdk build      # ESM + CJS + .d.ts + the IIFE
-pnpm --filter @stuffs-logger/sdk size       # rebuilds the IIFE and prints its gzipped size
-```
+Developed in the [stuffs-logger monorepo](https://github.com/MakingStuffs/stuffs-logger),
+alongside the dashboard that receives these events. Bugs and questions:
+[github.com/MakingStuffs/stuffs-logger/issues](https://github.com/MakingStuffs/stuffs-logger/issues).
 
 The wire contract's limits — batch size, field lengths, body size — live in
-`@stuffs-logger/core` and are imported, never restated, so the client and the
-server can never disagree about them. `src/contract.ts` is the only module
-allowed to import from the core: the core's barrel pulls zod in, which does not
-tree-shake, so every runtime import there reaches the core's leaf modules
-through the `@stuffs-logger/core/*` path mapping in `tsconfig.json`.
+`@stuffs-logger/core` and are imported by both ends, never restated, so the
+client and the server cannot disagree about them.
+
+MIT licensed.

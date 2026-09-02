@@ -1,0 +1,233 @@
+# The pull-request and trunk gate.
+#
+# Everything that decides whether a change is fit to merge runs here. The
+# checks themselves live in the reusable `verify.yml` so that `release.yml`
+# runs exactly the same ones before it publishes; this file adds the one thing
+# a release has no use for — pushing formatting fixes back to a pull request.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      # The release channel semantic-release resolves through the same glob.
+      - "*-rc"
+
+# READ-ONLY BY DEFAULT. Exactly one job below widens this, and only to the one
+# scope it needs. A workflow-level write token would be handed to every job,
+# including the ones that run third-party code from the dependency tree.
+permissions:
+  contents: read
+
+concurrency:
+  # `github.ref` is unique per pull request (`refs/pull/<n>/merge`) and per
+  # branch, so a new push supersedes the run it replaced.
+  group: ci-${{ github.ref }}
+  # Superseded pull-request runs are cancelled; a run on `main` or an `-rc`
+  # branch is not, because its result is the record of whether that commit was
+  # ever verified.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Verify
+    uses: ./.github/workflows/verify.yml
+
+  # THE FORMATTING FIX IS COMPUTED IN ONE JOB AND PUSHED BY ANOTHER, and the
+  # split is the whole security design rather than an organisational choice.
+  #
+  # `format-patch` runs the pull request's own code — `pnpm install` resolving
+  # the branch's lockfile, and `prettier --write` discovering whatever
+  # configuration and plugins the branch carries. That is unavoidable: there is
+  # no way to format a branch without reading it. So that job holds NOTHING —
+  # `contents: read`, no secret, no credential persisted in `.git/config` — and
+  # its only output is a patch file.
+  #
+  # `auto-format` holds the write credential and executes NO code from the pull
+  # request: it checks out, applies the patch with `git apply`, commits and
+  # pushes. Nothing it runs comes from the branch, so there is nothing for a
+  # branch to substitute. Merging the two would put `FORMAT_PUSH_TOKEN` in a
+  # job where branch-controlled code runs, and branch-controlled code can
+  # append to `$GITHUB_PATH` and have a later step run its own `git`.
+  format-patch:
+    name: Compute the formatting patch
+    runs-on: ubuntu-latest
+
+    # THE THREE GUARDS, and none of them is optional. They are repeated
+    # verbatim on `auto-format` below: `needs:` already means this job being
+    # skipped skips that one, and stating them twice is so that neither job can
+    # be made reachable by an edit to the other.
+    #
+    # 1. PULL REQUESTS ONLY. This workflow is triggered by `pull_request`, and
+    #    deliberately NEVER by `pull_request_target`. `pull_request_target`
+    #    runs in the BASE repository's context — with its secrets and a token
+    #    that can be write-scoped — while `github.head_ref` points at code the
+    #    pull-request author controls. Checking that code out under that token
+    #    hands a write credential to anyone who can open a pull request. There
+    #    is no safe way to combine the two, so this workflow does not.
+    #
+    # 2. SAME REPOSITORY ONLY. A fork's pull request must never reach the
+    #    `contents: write` token below. GitHub already downgrades the token for
+    #    fork pull requests, but relying on that alone means one future
+    #    trigger change is all it takes; the condition states the requirement
+    #    rather than inheriting it.
+    #
+    # 3. NOT A BOT. The push `auto-format` makes is the kind of event that
+    #    would retrigger this workflow. With the default `GITHUB_TOKEN` GitHub
+    #    suppresses that retrigger entirely; with the optional
+    #    `FORMAT_PUSH_TOKEN` it does not, so the actor guard is what stops a
+    #    GitHub App's push from looping. (A user PAT's push is stopped by
+    #    convergence instead: the second run finds nothing to format and
+    #    pushes nothing.)
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !endsWith(github.actor, '[bot]')
+
+    # Read-only, restated rather than inherited: this is the job that runs
+    # pull-request code, and it is the one place where the absence of a write
+    # scope is load-bearing.
+    permissions:
+      contents: read
+
+    outputs:
+      changed: ${{ steps.prettier.outputs.changed }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's own branch, not the merge commit, because the
+          # merge commit is not a branch and a fix computed against it would
+          # not apply to one.
+          #
+          # `github.head_ref` is a branch name chosen by the pull-request
+          # author. It is safe HERE because it is passed as an action input —
+          # a parameter, never a shell word. The same value interpolated into
+          # a `run:` block would be command injection, which is why no `run:`
+          # in this repository interpolates anything from the event.
+          ref: ${{ github.head_ref }}
+          # No token left in `.git/config` for the branch's own code to find.
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # See the note in verify.yml on why this is pinned rather than read
+          # from the `>=22` range in `engines`.
+          node-version: "24"
+          cache: pnpm
+
+      # `--ignore-scripts`, unlike everywhere else in this pipeline. A pull
+      # request can change `pnpm-workspace.yaml`'s build allowlist and the
+      # lockfile together to authorise a dependency's install script, and
+      # formatting a branch needs no package to build itself. Prettier is a
+      # root devDependency and plain JavaScript.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Apply Prettier
+        id: prettier
+        run: |
+          set -euo pipefail
+
+          pnpm format
+
+          # Nothing to do is the overwhelmingly common case, and it must not
+          # produce an empty patch, an artifact, or a job.
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already formatted." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          # TRACKED FILES ONLY, which is exactly the scope wanted: the
+          # checkout was clean, so this diff is precisely what Prettier
+          # rewrote and nothing else. `auto-format` commits the paths in this
+          # patch and no others.
+          git diff --patch --binary --no-color > "$RUNNER_TEMP/format.patch"
+
+      - name: Upload the formatting patch
+        if: steps.prettier.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: format-patch
+          path: ${{ runner.temp }}/format.patch
+          # Consumed by the next job in the same run; it is of no use after it.
+          retention-days: 1
+
+  auto-format:
+    name: Auto-format
+    runs-on: ubuntu-latest
+    needs: format-patch
+
+    # The same three guards as `format-patch`, plus "there is something to
+    # push". See the block above for why each one is load-bearing.
+    if: >-
+      needs.format-patch.outputs.changed == 'true' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !endsWith(github.actor, '[bot]')
+
+    # The only elevated scope in this workflow, on the only job that needs it —
+    # and the only job in it that runs nothing from the pull request.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # As above: an action input, never a shell word.
+          ref: ${{ github.head_ref }}
+
+          # OPTIONAL, AND THE DIFFERENCE MATTERS. With the default
+          # `GITHUB_TOKEN`, GitHub suppresses workflow runs for the resulting
+          # push, so the formatting fix lands on the branch but the red
+          # `format:check` from this same run stays red until the author
+          # pushes again. Configure `FORMAT_PUSH_TOKEN` (a fine-grained PAT or
+          # a GitHub App installation token with contents:write on this
+          # repository AND NO BRANCH-PROTECTION BYPASS) and the push produces a
+          # `synchronize` event, CI runs again on the fixed commit, and the
+          # pull request goes green on its own. It must be a DIFFERENT
+          # credential from any release token that does carry a bypass. See
+          # docs/CI-CD.md.
+          token: ${{ secrets.FORMAT_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Download the formatting patch
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: format-patch
+          path: ${{ runner.temp }}/format
+
+      - name: Apply the patch and push
+        run: |
+          set -euo pipefail
+
+          # The identity GitHub attributes to its own Actions bot. No value
+          # here comes from the event payload.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # `--index` stages EXACTLY the paths the patch touches — never
+          # `git add --all`, which would also commit anything else that ended
+          # up in the worktree. `git apply` is data, not code: it rewrites
+          # files and refuses paths that escape the repository. If the author
+          # pushed again while this run was in flight the patch will not
+          # apply, and failing here is the correct outcome — the next run
+          # recomputes it.
+          git apply --index --whitespace=nowarn "$RUNNER_TEMP/format/format.patch"
+
+          git commit --message "style: apply prettier formatting"
+          git push
+
+          {
+            echo "### Formatting applied"
+            echo
+            echo "Prettier rewrote files on this branch and the fix has been pushed."
+            echo "If the \`Verify / Format, lint and types\` check is red on the previous commit,"
+            echo "it was checked before this push — push any commit, or configure"
+            echo "\`FORMAT_PUSH_TOKEN\` so the fix retriggers CI by itself."
+          } >> "$GITHUB_STEP_SUMMARY"

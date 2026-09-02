@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "prisma generate && tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "prisma generate && vitest run --passWithNoTests",
+    "test:unit": "pnpm run test",
+    "test:e2e": "node --env-file-if-exists=.env.e2e ./node_modules/@playwright/test/cli.js test --project=chromium",
+    "test:e2e:report": "playwright show-report",
+    "test:smoke": "node --env-file-if-exists=.env.e2e ./node_modules/@playwright/test/cli.js test --project=smoke",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev"
   },
@@ -30,6 +34,7 @@
     "zod": "^4.1.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",

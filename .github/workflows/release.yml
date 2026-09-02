@@ -1,0 +1,138 @@
+# The release pipeline.
+#
+# semantic-release reads the conventional commits since the last tag, computes
+# the next version, writes it into all four manifests, builds and publishes
+# `@stuffs-logger/core` and `@stuffs-logger/sdk` to public npm, then commits
+# the changelog and the version bump back to the branch and cuts a GitHub
+# Release.
+#
+# CHANNELS (from release.config.mjs, not from this file):
+#   main    -> x.y.z        npm dist-tag `latest`   git tag vX.Y.Z
+#   *-rc    -> x.y.z-rc.N   npm dist-tag `rc`       git tag vX.Y.Z-rc.N
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      # The same glob semantic-release resolves via `git ls-remote`. A
+      # local-only `-rc` branch yields ERELEASEBRANCHES; push it first.
+      - "*-rc"
+
+# Read-only by default; the release job widens it to exactly what
+# semantic-release's plugin chain uses and nothing more.
+permissions:
+  contents: read
+
+concurrency:
+  # NEVER cancelled mid-flight. A run interrupted between `pnpm publish` and
+  # the git tag leaves a version on npm that this repository has no record of,
+  # and npm versions cannot be replaced. Queueing is the only safe behaviour.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # A RELEASE IS NEVER PUBLISHED FROM AN UNVERIFIED TREE. This is the same
+  # reusable workflow `ci.yml` runs on the pull request — format, lint, types,
+  # unit tests, build, tarball audit, and the full end-to-end and smoke suites
+  # against a real Postgres. Calling the same file rather than repeating its
+  # steps is what stops the two from drifting apart.
+  verify:
+    name: Verify
+    uses: ./.github/workflows/verify.yml
+
+  release:
+    name: Publish
+    needs: verify
+    runs-on: ubuntu-latest
+
+    # THE ONE CONTROL THAT DECIDES WHO MAY PUBLISH.
+    #
+    # This job is triggered by a push to `main` or to any branch matching
+    # `*-rc`, and it holds an npm Automation token with publish rights to the
+    # whole `@stuffs-logger` scope. Without an environment, that makes
+    # "publish to the public registry" reachable by anyone with repository
+    # WRITE access — a strictly lower privilege — by pushing a branch named
+    # `anything-rc`. `needs: verify` is not a control against that actor: the
+    # same push supplies the code and the tests that verify it.
+    #
+    # Naming an environment here binds `NPM_TOKEN` to a resource a maintainer
+    # can gate. THE GATING IS REPOSITORY CONFIGURATION, NOT THIS FILE, and
+    # until it is done this key changes nothing — docs/CI-CD.md states exactly
+    # what must be set: required reviewers, the deployment-branch restriction,
+    # `NPM_TOKEN` moved to an ENVIRONMENT secret, and a ruleset restricting who
+    # may create `*-rc` branches.
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/package/@stuffs-logger/sdk
+
+    # Exactly the scopes semantic-release's plugin chain needs:
+    permissions:
+      contents: write # the version commit, the git tag, the GitHub Release
+      issues: write # @semantic-release/github comments on released issues
+      pull-requests: write # ...and on released pull requests
+      # The OIDC token npm signs the provenance attestation with. Provenance is
+      # what makes a stolen NPM_TOKEN detectable rather than silent: a version
+      # published from anywhere other than this workflow, on this repository,
+      # at this ref carries no attestation and npm says so on the package page.
+      # `release.config.mjs` passes `--provenance` to the publish.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # semantic-release reads the whole commit history to work out what
+          # changed since the last tag. A shallow clone makes it compute the
+          # wrong version, silently.
+          fetch-depth: 0
+          # Left at its default (true) ON PURPOSE: @semantic-release/git pushes
+          # the version commit and the tag with this credential.
+          persist-credentials: true
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # 24, not 22: `semantic-release@25` declares
+          # `engines.node: "^22.14.0 || >= 24.10.0"`, which the repository's
+          # own `>=22` is looser than.
+          node-version: "24"
+          cache: pnpm
+          # Writes the runner `.npmrc` that makes `pnpm publish` read
+          # NODE_AUTH_TOKEN. Without it the publish step is anonymous.
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Release
+        # The whole pipeline, exactly as `release.config.mjs` defines it.
+        # cosmiconfig discovers that file at the repository root, so there is
+        # no `--extends` or `-c` flag to keep in step with it.
+        run: pnpm release
+        env:
+          # Creates the GitHub Release, comments on released issues and pull
+          # requests, and authenticates the version commit's push.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # An npm AUTOMATION token with publish rights to the `@stuffs-logger`
+          # scope. Automation type specifically, so npm's 2FA requirement does
+          # not block an unattended publish.
+          #
+          # THE ONLY PLACE THIS SECRET APPEARS. It is scoped to this one step,
+          # never echoed, never written to a file this workflow keeps, and
+          # never present in any job that uploads an artifact.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Checks the deployment after a release, when there is one to check.
+  #
+  # Deploying the dashboard is deliberately outside this repository's
+  # automation (see docs/DEPLOYMENT.md), so this runs only if a maintainer has
+  # set the `SMOKE_BASE_URL` repository VARIABLE — not a secret, because a
+  # public origin is not one — naming the environment to check.
+  smoke:
+    name: Smoke
+    needs: release
+    if: vars.SMOKE_BASE_URL != ''
+    uses: ./.github/workflows/smoke.yml
+    with:
+      base_url: ${{ vars.SMOKE_BASE_URL }}

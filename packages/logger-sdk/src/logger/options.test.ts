@@ -68,7 +68,10 @@ describe("resolveOptions", () => {
 
   it("reads the environment when nothing is configured", () => {
     vi.stubGlobal("process", {
-      env: { STUFFS_LOGGER_ENVIRONMENT: "staging", STUFFS_LOGGER_RELEASE: "abc123" },
+      env: {
+        STUFFS_LOGGER_ENVIRONMENT: "staging",
+        STUFFS_LOGGER_RELEASE: "abc123",
+      },
     });
 
     expect(resolveOptions({}, adapter)).toMatchObject({

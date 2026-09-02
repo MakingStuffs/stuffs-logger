@@ -1,15 +1,140 @@
 {
   "name": "@stuffs-logger/core",
   "version": "0.1.0",
-  "private": true,
+  "description": "Shared wire contract for stuffs-logger: ingest schemas, limits, log taxonomy and key redaction.",
+  "keywords": [
+    "logging",
+    "logger",
+    "observability",
+    "schema",
+    "zod",
+    "redaction",
+    "stuffs-logger"
+  ],
+  "license": "MIT",
+  "author": "MakingStuffs",
+  "homepage": "https://github.com/MakingStuffs/stuffs-logger/tree/main/packages/logger-core#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MakingStuffs/stuffs-logger.git",
+    "directory": "packages/logger-core"
+  },
+  "bugs": {
+    "url": "https://github.com/MakingStuffs/stuffs-logger/issues"
+  },
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.cts",
+          "default": "./dist/index.cjs"
+        }
+      },
+      "./constants": {
+        "import": {
+          "types": "./dist/constants.d.ts",
+          "default": "./dist/constants.js"
+        },
+        "require": {
+          "types": "./dist/constants.d.cts",
+          "default": "./dist/constants.cjs"
+        }
+      },
+      "./json": {
+        "import": {
+          "types": "./dist/json.d.ts",
+          "default": "./dist/json.js"
+        },
+        "require": {
+          "types": "./dist/json.d.cts",
+          "default": "./dist/json.cjs"
+        }
+      },
+      "./keys": {
+        "import": {
+          "types": "./dist/keys.d.ts",
+          "default": "./dist/keys.js"
+        },
+        "require": {
+          "types": "./dist/keys.d.cts",
+          "default": "./dist/keys.cjs"
+        }
+      },
+      "./redaction": {
+        "import": {
+          "types": "./dist/redaction.d.ts",
+          "default": "./dist/redaction.js"
+        },
+        "require": {
+          "types": "./dist/redaction.d.cts",
+          "default": "./dist/redaction.cjs"
+        }
+      },
+      "./schemas": {
+        "import": {
+          "types": "./dist/schemas.d.ts",
+          "default": "./dist/schemas.js"
+        },
+        "require": {
+          "types": "./dist/schemas.d.cts",
+          "default": "./dist/schemas.cjs"
+        }
+      },
+      "./taxonomy": {
+        "import": {
+          "types": "./dist/taxonomy.d.ts",
+          "default": "./dist/taxonomy.js"
+        },
+        "require": {
+          "types": "./dist/taxonomy.d.cts",
+          "default": "./dist/taxonomy.cjs"
+        }
+      },
+      "./text": {
+        "import": {
+          "types": "./dist/text.d.ts",
+          "default": "./dist/text.js"
+        },
+        "require": {
+          "types": "./dist/text.d.cts",
+          "default": "./dist/text.cjs"
+        }
+      },
+      "./timestamps": {
+        "import": {
+          "types": "./dist/timestamps.d.ts",
+          "default": "./dist/timestamps.js"
+        },
+        "require": {
+          "types": "./dist/timestamps.d.cts",
+          "default": "./dist/timestamps.cjs"
+        }
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "tsup",
     "lint": "eslint . --config ../../eslint.config.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
@@ -18,7 +143,11 @@
     "zod": "^4.1.14"
   },
   "devDependencies": {
+    "tsup": "^8.5.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

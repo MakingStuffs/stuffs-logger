@@ -70,7 +70,10 @@ directly, which bypasses Better Auth's own router-level rate limiting.
 - No theme toggle - OS preference only. `[data-theme]` is already wired for one.
 - Fonts are system stacks, chosen for zero webfont bytes and no CLS. One token to change.
 - MSW is not installed, so transport tests stub `fetch` directly.
-- No e2e/Playwright suite. `test:e2e`/`test:smoke` scripts are not wired up.
+- The e2e suite runs on Chromium only. A second engine is one entry in
+  `BROWSER_PROJECTS` in `apps/dashboard/playwright.config.ts`; it is left off
+  because every journey in the product is server-rendered HTML and a second
+  engine's cost lands on every pull request.
 - `projection.test.ts` is missing the `expect("polluted" in {}).toBe(false)` assertion its
   two core counterparts carry. Pollution is impossible there by construction.
 
@@ -80,3 +83,25 @@ directly, which bypasses Better Auth's own router-level rate limiting.
 commented out in `.env.example`. `src/constants/environment.ts` throws at boot if either
 is set while `NODE_ENV=production`. That guard is this app's own - nothing in the auth
 library enforces it. Keep it.
+
+## 9. Publishing and release
+
+- **The first release from `main` will be `1.0.0`, not `0.2.0`.** semantic-release has no
+  tags to read (`git tag -l` is empty), so it treats this as a first release and ignores
+  the `0.1.0` in the manifests. If the 0.x line should continue instead, tag the current
+  tip `v0.1.0` and push the tag before the first release run; semantic-release will then
+  bump from there. This is a deliberate choice to make, not an accident to discover
+  after `@stuffs-logger/sdk@1.0.0` is on npm and unpublishable.
+- **`@stuffs-logger/sdk` depends on `@stuffs-logger/core` even though it bundles it.**
+  `tsup`'s `noExternal` inlines the core's _code_, but the SDK's emitted declarations
+  still reference `@stuffs-logger/core` for `IngestBatch` and its leaf modules for the
+  taxonomy and redaction types, so the dependency is real for TypeScript consumers. The
+  cost is that installing the SDK also installs zod transitively, which the READMEs
+  describe as "zero runtime deps". Making the SDK's `.d.ts` fully self-contained would
+  let the dependency move to `devDependencies`; `tsup`'s `dts.resolve` cannot do it,
+  because its ts-resolver does not honour the tsconfig path mapping the seam relies on.
+- **`@stuffs-logger/core` does not set `"sideEffects": false`.** It could: every module in
+  it is pure. It is left off deliberately for now because the SDK's measured bundle size
+  is an acceptance criterion, and that flag changes what a bundler may tree-shake out of
+  the core's zod-bearing barrel — a size change worth making on purpose and measuring,
+  not as a side effect of making the package publishable.

@@ -17,7 +17,16 @@
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "noEmit": true
+
+    // `noEmit` is the right setting for `typecheck`; tsup overrides it for the
+    // declaration build and emits `dist/index.d.ts` itself.
+    "noEmit": true,
+
+    // That declaration build injects a "baseUrl", which TypeScript 6
+    // deprecates. This package declares no "paths" of its own, so the option
+    // is silenced rather than satisfied — the same workaround, for the same
+    // reason, as `packages/logger-sdk/tsconfig.json`.
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]

@@ -53,7 +53,11 @@ export { jsonByteLength } from "@stuffs-logger/core/json";
 export { parseIngestKey } from "@stuffs-logger/core/keys";
 
 export type { JsonValue } from "@stuffs-logger/core/json";
-export type { LoggerKind, LogLevel, LogSource } from "@stuffs-logger/core/taxonomy";
+export type {
+  LoggerKind,
+  LogLevel,
+  LogSource,
+} from "@stuffs-logger/core/taxonomy";
 
 export type {
   IngestBatch,
