@@ -4,6 +4,12 @@ All notable changes to `@stuffs/logger-core`, `@stuffs/logger` and the self-host
 
 Entries are written by [`scripts/release.sh`](./scripts/release.sh) from the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) on `main` and on `*-rc` branches, and the same notes are published to [GitHub Releases](https://github.com/MakingStuffs/stuffs-logger/releases). Do not edit them here: fix the wording of a commit message before it merges instead.
 
+## 0.1.1 (2026-10-26)
+
+### Bug Fixes
+
+* evict sign-in windows in amortised constant time ([6190172](https://github.com/MakingStuffs/stuffs-logger/commit/61901723381e3d9b8894a9828ee9e5a1a2c2aa68))
+
 ## 0.1.0 (2026-10-26)
 
 The baseline every later entry is measured from, written by hand because it predates the release pipeline. It was published to npm by hand, without provenance, only to create the packages; every later version is published by the release workflow, with provenance.

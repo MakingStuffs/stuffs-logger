@@ -1,6 +1,6 @@
 {
   "name": "@stuffs/logger",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cross-platform logging client for stuffs-logger: browser, Node and <script> builds with batching, redaction and console capture.",
   "keywords": [
     "logging",
