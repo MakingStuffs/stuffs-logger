@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { LogEventListItem, LogEventPage } from "@/lib/logs/dto";
-import { DEFAULT_PAGE_SIZE } from "@/lib/logs/filters";
+import { DEFAULT_PAGE_SIZE } from "@/lib/logs/constants";
 import type { LogFilters } from "@/lib/logs/filters";
 
 import { makeLogEventListItem } from "./log-event-fixtures";

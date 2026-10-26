@@ -171,6 +171,43 @@ export const E2E_DATABASE_URL_MISSING_MESSAGE =
 export const DISPOSABLE_DATABASE_NAME_PATTERN =
   /(?:^|[^a-z0-9])(?:e2e|test)(?:[^a-z0-9]|$)/i;
 
+/**
+ * What a database must NOT be called, whatever else its name says.
+ *
+ * Checked BEFORE the allowlist above, because the two overlap: `production-test`
+ * and `prod_e2e_replica` both contain `test` or `e2e` as a whole word and the
+ * allowlist alone would wave them through. A name that says `prod`,
+ * `production` or `live` — again as a whole word, so `product_e2e` and
+ * `delivery-test` are untouched — is describing something that matters, and a
+ * scratch database can always be renamed to stop saying it.
+ */
+export const PRODUCTION_LIKE_DATABASE_NAME_PATTERN =
+  /(?:^|[^a-z0-9])(?:prod|production|live)(?:[^a-z0-9]|$)/i;
+
+/**
+ * The hosts a database may live on without an explicit opt-in.
+ *
+ * The container `docs/CI-CD.md` tells a developer to start, the service
+ * container in `verify.yml`, and a Postgres installed on the machine itself
+ * all answer on one of these. Anything else is a database on another machine,
+ * which is the shape a shared staging or production replica has — and which
+ * a name check alone cannot tell from a scratch one.
+ */
+export const LOOPBACK_DATABASE_HOSTS: readonly string[] = [
+  "127.0.0.1",
+  "localhost",
+  "::1",
+];
+
+/**
+ * The variable that lets the harness write to a database on another machine.
+ *
+ * `1` (or `true`) says "I know this remote database is disposable". It
+ * relaxes ONLY the host rule: the name rules still apply, so a remote
+ * `stuffs_logger` or `prod_e2e_replica` is refused with or without it.
+ */
+export const REMOTE_DATABASE_OPT_IN = "E2E_ALLOW_REMOTE_DATABASE";
+
 /** The message shown when the named database does not look disposable. */
 export const NON_DISPOSABLE_DATABASE_MESSAGE =
   "Refusing to run against a database that does not look disposable.\n\n" +
@@ -181,6 +218,29 @@ export const NON_DISPOSABLE_DATABASE_MESSAGE =
   "`test` as a whole word — e.g. `stuffs_logger_e2e`.\n\n" +
   "If the target really is a scratch database, rename it (or `createdb " +
   "stuffs_logger_e2e`) rather than relaxing this check.\n";
+
+/** The message shown when the database name says it is production-like. */
+export const PRODUCTION_LIKE_DATABASE_MESSAGE =
+  "Refusing to run against a database whose name says it is not disposable.\n\n" +
+  "The database name contains `prod`, `production` or `live` as a whole " +
+  "word. The e2e harness force-creates an ADMIN account whose password is a " +
+  "public literal in this repository and deletes log rows, and a name like " +
+  "`production-test` or `prod_e2e_replica` is exactly the kind of target " +
+  "that should never receive either — the `e2e` or `test` in it does not " +
+  "make it safe.\n\n" +
+  "If it really is a scratch database, rename it (e.g. `createdb " +
+  "stuffs_logger_e2e`) rather than relaxing this check.\n";
+
+/** The message shown when the database is not on this machine. */
+export const REMOTE_DATABASE_MESSAGE =
+  "Refusing to run against a database that is not on this machine.\n\n" +
+  "The e2e harness MIGRATES, SEEDS AND TRUNCATES its target, and a database " +
+  "on another host — including one named through Prisma's `?host=` " +
+  "override — is the shape a shared staging or production replica has. The " +
+  "target must be on 127.0.0.1, localhost or ::1: the container " +
+  "docs/CI-CD.md starts, or a Postgres you run yourself.\n\n" +
+  "If the remote database really is disposable, say so explicitly with " +
+  `${REMOTE_DATABASE_OPT_IN}=1. The name rules still apply.\n`;
 
 /** The message shown when the harness is asked to run in production. */
 export const PRODUCTION_DATABASE_MESSAGE =
@@ -215,15 +275,21 @@ export type DatabaseTarget =
  * way. And because a variable named `E2E_…` can still be pointed at the wrong
  * thing, the database it names must also LOOK disposable.
  *
- * NEITHER MESSAGE EVER ECHOES A CONNECTION STRING. They are attached to a
- * failing step in the HTML report and printed in CI logs, and a Postgres URL
- * carries a password; only the database name is quoted back.
+ * AND IT MUST BE ON THIS MACHINE. The name rules are a check on what the
+ * operator typed; the host rule is a check on where the bytes go. A database
+ * on another host is the shape every shared environment has, so it is refused
+ * unless `E2E_ALLOW_REMOTE_DATABASE=1` says it is disposable on purpose —
+ * and the name rules are not relaxed by that opt-in.
+ *
+ * NO MESSAGE EVER ECHOES A CONNECTION STRING. They are attached to a failing
+ * step in the HTML report and printed in CI logs, and a Postgres URL carries
+ * a password and names a host; nothing from the URL is quoted back.
  *
  * @param env - The environment to read.
  * @returns Both connection strings, or a message explaining the refusal.
  * @example
- * resolveDatabaseTarget({ E2E_DATABASE_URL: "postgresql://h/app_e2e" });
- * // { ok: true, url: "postgresql://h/app_e2e", directUrl: "postgresql://h/app_e2e" }
+ * resolveDatabaseTarget({ E2E_DATABASE_URL: "postgresql://127.0.0.1/app_e2e" });
+ * // { ok: true, url: "postgresql://127.0.0.1/app_e2e", directUrl: "postgresql://127.0.0.1/app_e2e" }
  */
 export function resolveDatabaseTarget(env: EnvironmentSource): DatabaseTarget {
   const url = setValue(env.E2E_DATABASE_URL);
@@ -239,10 +305,12 @@ export function resolveDatabaseTarget(env: EnvironmentSource): DatabaseTarget {
   // Checked SEPARATELY, because the direct URL is the one `prisma migrate
   // deploy` runs against — the single most destructive thing the harness does.
   const directUrl = setValue(env.E2E_DIRECT_DATABASE_URL) ?? url;
+  const allowRemote = isOptedIn(env[REMOTE_DATABASE_OPT_IN]);
 
   for (const candidate of [url, directUrl]) {
-    if (!isDisposableDatabase(candidate)) {
-      return { ok: false, message: NON_DISPOSABLE_DATABASE_MESSAGE };
+    const refusal = refusalFor(candidate, allowRemote);
+    if (refusal !== undefined) {
+      return { ok: false, message: refusal };
     }
   }
 
@@ -250,11 +318,45 @@ export function resolveDatabaseTarget(env: EnvironmentSource): DatabaseTarget {
 }
 
 /**
- * Whether a connection string names a database this harness may destroy.
+ * Why a connection string may not be written to, in the order the rules are
+ * applied: the deny-list on the name, then the allow-list on the name, then
+ * the host. The order matters for the message — `production-test` is told it
+ * looks like production, not that it is remote.
  *
- * FAILS CLOSED on anything it cannot read: a connection string whose database
- * name cannot be extracted is one whose disposability cannot be established,
- * and "I could not tell" must never resolve to "go ahead".
+ * @param connectionString - A Postgres connection URL.
+ * @param allowRemote - Whether the host rule has been waived.
+ * @returns The refusal message, or `undefined` when the target is acceptable.
+ */
+function refusalFor(
+  connectionString: string,
+  allowRemote: boolean,
+): string | undefined {
+  // FAILS CLOSED: a connection string whose database name cannot be read is
+  // one whose disposability cannot be established, and "I could not tell"
+  // must never resolve to "go ahead".
+  const name = databaseNameOf(connectionString);
+  if (name === undefined) return NON_DISPOSABLE_DATABASE_MESSAGE;
+
+  if (PRODUCTION_LIKE_DATABASE_NAME_PATTERN.test(name)) {
+    return PRODUCTION_LIKE_DATABASE_MESSAGE;
+  }
+  if (!DISPOSABLE_DATABASE_NAME_PATTERN.test(name)) {
+    return NON_DISPOSABLE_DATABASE_MESSAGE;
+  }
+  if (!allowRemote && !isLoopbackDatabase(connectionString)) {
+    return REMOTE_DATABASE_MESSAGE;
+  }
+
+  return undefined;
+}
+
+/**
+ * Whether a connection string names a database this harness may destroy, as
+ * far as its NAME can say.
+ *
+ * The deny pattern is consulted first, so `production-test` is not disposable
+ * however squarely it matches the allow pattern. FAILS CLOSED on anything it
+ * cannot read.
  *
  * @param connectionString - A Postgres connection URL.
  * @returns True when the database name reads as an e2e-only one.
@@ -263,7 +365,41 @@ export function isDisposableDatabase(connectionString: string): boolean {
   const name = databaseNameOf(connectionString);
   if (name === undefined) return false;
 
-  return DISPOSABLE_DATABASE_NAME_PATTERN.test(name);
+  return (
+    !PRODUCTION_LIKE_DATABASE_NAME_PATTERN.test(name) &&
+    DISPOSABLE_DATABASE_NAME_PATTERN.test(name)
+  );
+}
+
+/**
+ * Whether a connection string points at this machine.
+ *
+ * HONOURS PRISMA'S `?host=` OVERRIDE. Prisma's PostgreSQL connector lets the
+ * query parameter `host` replace the host in the authority — it exists for
+ * Unix socket paths, but it is applied to any value — so a URL whose
+ * authority says `127.0.0.1` can still connect to `prod-db.internal`. When
+ * the override is present it is the host that is checked, and a socket path
+ * given that way does not count as loopback either: the rule is "one of the
+ * three loopback spellings", and anything else needs the opt-in. FAILS CLOSED
+ * on a URL that cannot be parsed or that names no host at all.
+ *
+ * @param connectionString - A Postgres connection URL.
+ * @returns True when the effective host is `127.0.0.1`, `localhost` or `::1`.
+ */
+export function isLoopbackDatabase(connectionString: string): boolean {
+  const host = databaseHostOf(connectionString);
+  if (host === undefined) return false;
+
+  return LOOPBACK_DATABASE_HOSTS.includes(host);
+}
+
+/** The pieces of a Postgres connection URL the rules above look at. */
+function parseConnectionString(connectionString: string): URL | undefined {
+  try {
+    return new URL(connectionString);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -273,12 +409,8 @@ export function isDisposableDatabase(connectionString: string): boolean {
  * @returns The name, or `undefined` when there is not one to read.
  */
 function databaseNameOf(connectionString: string): string | undefined {
-  let parsed: URL;
-  try {
-    parsed = new URL(connectionString);
-  } catch {
-    return undefined;
-  }
+  const parsed = parseConnectionString(connectionString);
+  if (parsed === undefined) return undefined;
 
   // `/stuffs_logger_e2e` -> `stuffs_logger_e2e`. Decoded because a name may be
   // percent-encoded, and a decode that throws is a name that cannot be read.
@@ -288,6 +420,35 @@ function databaseNameOf(connectionString: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The host a Postgres connection URL actually connects to.
+ *
+ * @param connectionString - A Postgres connection URL.
+ * @returns The lower-cased host with any IPv6 brackets removed, or `undefined`
+ *   when the URL cannot be parsed or names no host.
+ */
+function databaseHostOf(connectionString: string): string | undefined {
+  const parsed = parseConnectionString(connectionString);
+  if (parsed === undefined) return undefined;
+
+  // The `?host=` override wins over the authority — see `isLoopbackDatabase`.
+  const override = parsed.searchParams.get("host")?.trim();
+  const raw =
+    override !== undefined && override.length > 0 ? override : parsed.hostname;
+
+  // An IPv6 literal is bracketed in the authority (`[::1]`) and bare in a
+  // query parameter; compare the same spelling either way.
+  const host = raw.replace(/^\[|\]$/g, "").toLowerCase();
+  return host.length > 0 ? host : undefined;
+}
+
+/** Whether an opt-in variable is set to `1` or `true`, case-insensitively. */
+function isOptedIn(value: string | undefined): boolean {
+  const trimmed = value?.trim().toLowerCase();
+
+  return trimmed === "1" || trimmed === "true";
 }
 
 /**

@@ -45,8 +45,23 @@ function pad(value: number): string {
   return value.toString().padStart(2, "0");
 }
 
-function toValidDate(iso: string): Date | null {
-  const date = new Date(iso);
+/**
+ * One formatter for every count on the page.
+ *
+ * `Intl.NumberFormat` resolves locale data when it is constructed, which is
+ * far more work than formatting a number with it afterwards. Built per call it
+ * would do that work once per metric on the overview grid.
+ */
+const COUNT_FORMAT = new Intl.NumberFormat("en-GB");
+
+/**
+ * A usable `Date` from an instant in either form, or `null`.
+ *
+ * Accepting a `Date` as well as a string lets a row that shows the same instant
+ * three times — the cell, its `title`, the control's label — parse it once.
+ */
+function toValidDate(value: string | Date): Date | null {
+  const date = typeof value === "string" ? new Date(value) : value;
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -58,11 +73,12 @@ function toValidDate(iso: string): Date | null {
  * different strings whenever those clocks disagree. Every surface that shows a
  * time labels it, so there is no ambiguity for the reader.
  *
- * @param iso - An ISO-8601 instant from a DTO.
+ * @param value - An ISO-8601 instant from a DTO, or a `Date` already parsed
+ *   from one.
  * @returns The formatted instant, or a placeholder when unparseable.
  */
-export function formatUtcTimestamp(iso: string): string {
-  const date = toValidDate(iso);
+export function formatUtcTimestamp(value: string | Date): string {
+  const date = toValidDate(value);
   if (date === null) return EMPTY_VALUE;
 
   const month = MONTHS[date.getUTCMonth()] ?? "";
@@ -73,11 +89,12 @@ export function formatUtcTimestamp(iso: string): string {
  * A timestamp with its year and milliseconds, in UTC, for detail views and
  * `title` attributes.
  *
- * @param iso - An ISO-8601 instant from a DTO.
+ * @param value - An ISO-8601 instant from a DTO, or a `Date` already parsed
+ *   from one.
  * @returns The formatted instant, or a placeholder when unparseable.
  */
-export function formatUtcTimestampLong(iso: string): string {
-  const date = toValidDate(iso);
+export function formatUtcTimestampLong(value: string | Date): string {
+  const date = toValidDate(value);
   if (date === null) return EMPTY_VALUE;
 
   const month = MONTHS[date.getUTCMonth()] ?? "";
@@ -103,7 +120,7 @@ export function toDateTimeLocalValue(date: Date | undefined): string {
  * @returns The formatted count, e.g. `12,405`.
  */
 export function formatCount(value: number): string {
-  return new Intl.NumberFormat("en-GB").format(value);
+  return COUNT_FORMAT.format(value);
 }
 
 /**

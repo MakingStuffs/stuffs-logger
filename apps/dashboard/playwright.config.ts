@@ -29,12 +29,14 @@ import { SEED_ADMIN } from "./e2e/support/fixtures";
  * PROJECT CHAIN. Each stage is its own project so a failure names the stage
  * that failed rather than surfacing three steps later:
  *
- *   migrate → seed → auth → chromium
+ *   migrate → seed → auth → chromium → teardown
  *   smoke-guard → smoke
  *
  * The smoke chain is deliberately separate and unauthenticated: it runs
  * against deployed environments, where there are no fixture users and nothing
- * may be written.
+ * may be written. `teardown` deactivates the seeded accounts once the browser
+ * projects are done, so the ADMIN with a repository-readable password does not
+ * outlive the run on a long-lived local database.
  */
 
 /** Truthy in every CI provider that sets it, including GitHub Actions. */
@@ -100,6 +102,23 @@ const managedServerSecret =
 const BROWSER_PROJECTS = [
   { name: "chromium", device: devices["Desktop Chrome"] },
 ] as const;
+
+/**
+ * Whether the smoke suite is pointed at the dashboard THIS run starts.
+ *
+ * True in `verify.yml`, where one Playwright invocation runs the e2e and the
+ * smoke projects against the same managed server rather than building and
+ * starting it twice. That server boots against an EMPTY database — the
+ * `migrate` project is what gives it a schema — and the smoke suite's ingest
+ * probe looks its key up in that schema, so in this one case the smoke
+ * project must wait for `migrate`. Against a deployed origin (`smoke.yml`, or
+ * `E2E_BASE_URL` set locally) there is no database in play and no migrate
+ * project to wait for, which is why the dependency is conditional rather
+ * than permanent: a permanent one would drag a database into the suite that
+ * is defined by not needing one.
+ */
+const smokeTargetsManagedServer =
+  smoke.ok && e2eTarget.managesServer && smoke.baseUrl === e2eTarget.baseUrl;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -168,9 +187,24 @@ export default defineConfig({
         storageState: SEED_ADMIN.storageStatePath,
       },
       dependencies: ["auth"],
+      // Deactivates the seeded accounts once this project has finished — see
+      // `e2e/setup/teardown.setup.ts`. Named here, on the consumer of the
+      // seeded state, rather than on `seed`: Playwright runs a teardown after
+      // every project that names it AND their dependents, so a second browser
+      // appended to BROWSER_PROJECTS is covered by this same line.
+      teardown: "teardown",
       testMatch: /specs\/.*\.spec\.ts$/,
       testIgnore: /smoke\.spec\.ts$/,
     })),
+    {
+      // Runs after the browser projects whether their tests passed or not,
+      // and is selected automatically by `--project=chromium`.
+      name: "teardown",
+      testMatch: /teardown\.setup\.ts$/,
+      // Never retried: a failed `updateMany` is a connectivity problem, and
+      // the seed will re-promote the accounts next run regardless.
+      retries: 0,
+    },
 
     {
       // Fails the smoke run with an explanation when it has no target, rather
@@ -185,7 +219,11 @@ export default defineConfig({
     {
       name: "smoke",
       testMatch: /smoke\.spec\.ts$/,
-      dependencies: ["smoke-guard"],
+      // `migrate` joins the list only when the target is the server this run
+      // manages — see `smokeTargetsManagedServer`.
+      dependencies: smokeTargetsManagedServer
+        ? ["smoke-guard", "migrate"]
+        : ["smoke-guard"],
       use: {
         ...devices["Desktop Chrome"],
         // Falls back to the e2e target only so the project can be constructed;
@@ -230,7 +268,8 @@ export default defineConfig({
    * `SMOKE_BASE_URL`, or it will build and start a whole local dashboard it
    * never visits (and fail, in a job with no database). Both are set together
    * in `.github/workflows/smoke.yml`. The one place that deliberately does not
-   * is `verify.yml`'s smoke step, where the managed server IS the target.
+   * is `verify.yml`, where the managed server IS the smoke target and both
+   * suites run in one invocation (`--project=chromium --project=smoke`).
    *
    * A PRODUCTION BUILD, not `next dev`: dev-mode compilation timing hides the
    * races a real deployment has, and the security headers the smoke suite
@@ -257,6 +296,12 @@ export default defineConfig({
           BETTER_AUTH_SECRET: managedServerSecret,
           // Its own origin, so no auth URL is derived from a request header.
           BETTER_AUTH_URL: e2eTarget.baseUrl,
+          // Pinned off. Next loads the developer's own `.env.local`, and a
+          // local `SKIP_AUTH=true` there would make the production build
+          // refuse to start — and would mean the suite was not testing real
+          // sign-in if it did. Process env wins over dotenv files.
+          SKIP_AUTH: "false",
+          NEXT_PUBLIC_SKIP_AUTH: "false",
           // `next start` reads PORT. Kept in step with the base URL every
           // spec navigates against, so `E2E_PORT` moves both together.
           ...(e2eTarget.port === undefined

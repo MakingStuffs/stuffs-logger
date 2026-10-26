@@ -27,7 +27,7 @@ export function ApplicationList({
             <CardHeader>
               <CardTitle className="text-base">
                 <Link
-                  href={`/apps/${application.slug}`}
+                  href={`/apps/${encodeURIComponent(application.slug)}`}
                   className="hover:text-primary focus-visible:ring-ring rounded-sm focus-visible:ring-2 focus-visible:outline-none"
                 >
                   {application.name}

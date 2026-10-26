@@ -12,7 +12,7 @@ import {
   DEFAULT_MAX_QUEUE_SIZE,
 } from "../defaults";
 import { createTestAdapter } from "../testing/fixtures";
-import { clampShort, resolveOptions } from "./options";
+import { clampShort, MAX_QUEUE_SIZE_CEILING, resolveOptions } from "./options";
 
 const adapter = createTestAdapter();
 
@@ -58,6 +58,12 @@ describe("resolveOptions", () => {
 
   it("keeps a queue of at least one event", () => {
     expect(resolveOptions({ maxQueueSize: 0 }, adapter).maxQueueSize).toBe(1);
+  });
+
+  it("caps the queue at the ceiling rather than allocating whatever was asked for", () => {
+    expect(resolveOptions({ maxQueueSize: 1e10 }, adapter).maxQueueSize).toBe(
+      MAX_QUEUE_SIZE_CEILING,
+    );
   });
 
   it("allows a zero flush interval, which is not the same as absent", () => {

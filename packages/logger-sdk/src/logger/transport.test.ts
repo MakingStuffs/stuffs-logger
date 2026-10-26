@@ -28,6 +28,18 @@ function respond(
   return new Response(null, { status, headers });
 }
 
+/** The dashboard's `202` envelope, as `apiSuccess` writes it. */
+function respondAccepted(data: unknown): Response {
+  return new Response(JSON.stringify({ success: true, data }), {
+    status: 202,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function sentBody(request: ReturnType<typeof vi.fn>): Uint8Array {
+  return request.mock.calls[0]?.[1]?.body as Uint8Array;
+}
+
 describe("createHttpTransport", () => {
   let request: ReturnType<typeof vi.fn>;
 
@@ -69,6 +81,22 @@ describe("createHttpTransport", () => {
     expect(request.mock.calls[0]?.[1]).toMatchObject({ credentials: "omit" });
   });
 
+  it("refuses to follow a redirect, which would carry the key to another origin", async () => {
+    await transport().send({ batch: makeBatch(), urgent: false });
+
+    expect(request.mock.calls[0]?.[1]).toMatchObject({ redirect: "error" });
+  });
+
+  it("sends the batch as the bytes it measured", async () => {
+    const batch = makeBatch(2);
+
+    await transport().send({ batch, urgent: false });
+
+    const body = sentBody(request);
+    expect(body).toBeInstanceOf(Uint8Array);
+    expect(JSON.parse(new TextDecoder().decode(body))).toEqual(batch);
+  });
+
   it("uses keepalive only on the unload path", async () => {
     await transport().send({ batch: makeBatch(), urgent: true });
     expect(request.mock.calls[0]?.[1]).toMatchObject({ keepalive: true });
@@ -84,6 +112,63 @@ describe("createHttpTransport", () => {
     });
 
     expect(outcome).toEqual({ kind: "sent", accepted: 3 });
+  });
+
+  it("counts only the events the server says it accepted", async () => {
+    request.mockResolvedValueOnce(
+      respondAccepted({ accepted: 2, rejected: 1, rejectedEvents: [] }),
+    );
+
+    const outcome = await transport().send({
+      batch: makeBatch(3),
+      urgent: false,
+    });
+
+    expect(outcome).toEqual({ kind: "sent", accepted: 2 });
+  });
+
+  it("reports the events the server rejected", async () => {
+    const report = vi.fn();
+    request.mockResolvedValueOnce(
+      respondAccepted({ accepted: 2, rejected: 1 }),
+    );
+
+    await transport(report).send({ batch: makeBatch(3), urgent: false });
+
+    expect(report).toHaveBeenCalledWith(
+      expect.any(Error),
+      "transport.rejected",
+    );
+  });
+
+  it("stays quiet when the server rejected nothing", async () => {
+    const report = vi.fn();
+    request.mockResolvedValueOnce(
+      respondAccepted({ accepted: 3, rejected: 0 }),
+    );
+
+    await transport(report).send({ batch: makeBatch(3), urgent: false });
+
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the batch size when the body is not the ingest envelope", async () => {
+    for (const body of [
+      "not json",
+      "null",
+      JSON.stringify({ success: true }),
+      JSON.stringify({ data: "nope" }),
+      JSON.stringify({ data: { accepted: "2" } }),
+    ]) {
+      request.mockResolvedValueOnce(new Response(body, { status: 202 }));
+
+      const outcome = await transport().send({
+        batch: makeBatch(3),
+        urgent: false,
+      });
+
+      expect(outcome, body).toEqual({ kind: "sent", accepted: 3 });
+    }
   });
 
   it("disables itself when the key is refused", async () => {
@@ -169,10 +254,7 @@ describe("createHttpTransport", () => {
     const outcome = await transport().send({ batch, urgent: false });
 
     expect(outcome.kind).toBe("sent");
-    const body = request.mock.calls[0]?.[1]?.body as string;
-    expect(new TextEncoder().encode(body).length).toBeLessThanOrEqual(
-      MAX_BODY_BYTES,
-    );
+    expect(sentBody(request).length).toBeLessThanOrEqual(MAX_BODY_BYTES);
   });
 
   it("refuses an unload batch whose multi-byte content busts the keepalive budget", async () => {

@@ -2,7 +2,6 @@
 
 import { useActionState, useEffect, useState } from "react";
 
-import { revokeIngestKeyAction } from "@/lib/apps/actions";
 import type { IngestKeyActionResult } from "@/lib/apps/actions";
 
 import { Button } from "../ui/button";
@@ -18,7 +17,17 @@ import {
 import { Input } from "../ui/input";
 import { SubmitButton } from "../ui/submit-button";
 
+import type { IngestKeyAction } from "./ingest-key-action";
+
 const INITIAL_RESULT: IngestKeyActionResult = { status: "idle" };
+
+/** Props for {@link RevokeIngestKeyDialog}. */
+export interface RevokeIngestKeyDialogProps {
+  /** The Server Action that revokes the key. See {@link IngestKeyAction}. */
+  action: IngestKeyAction;
+  keyId: string;
+  keyName: string;
+}
 
 /**
  * Revokes an ingest key, behind a typed confirmation.
@@ -30,12 +39,10 @@ const INITIAL_RESULT: IngestKeyActionResult = { status: "idle" };
  * reading the row can retype what is in it.
  */
 export function RevokeIngestKeyDialog({
+  action,
   keyId,
   keyName,
-}: {
-  keyId: string;
-  keyName: string;
-}) {
+}: RevokeIngestKeyDialogProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -48,6 +55,7 @@ export function RevokeIngestKeyDialog({
       <DialogContent className="sm:max-w-md">
         {open ? (
           <RevokeForm
+            action={action}
             keyId={keyId}
             keyName={keyName}
             onDone={() => setOpen(false)}
@@ -59,16 +67,13 @@ export function RevokeIngestKeyDialog({
 }
 
 function RevokeForm({
+  action,
   keyId,
   keyName,
   onDone,
-}: {
-  keyId: string;
-  keyName: string;
-  onDone: () => void;
-}) {
+}: RevokeIngestKeyDialogProps & { onDone: () => void }) {
   const [result, formAction, isPending] = useActionState(
-    revokeIngestKeyAction,
+    action,
     INITIAL_RESULT,
   );
 

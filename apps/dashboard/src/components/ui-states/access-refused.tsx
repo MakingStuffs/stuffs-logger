@@ -76,7 +76,7 @@ const REFUSAL_COPY: Readonly<Record<AccessRefusalCode, RefusalCopy>> = {
     icon: ShieldAlert,
     title: "Administrators only",
     description:
-      "Your account can read every application's logs, but not manage its ingest keys. A key is a live write credential, and revoking one silently stops a production application logging, so minting and revoking them is held at the administrator role. Nothing has gone wrong; if you need to manage keys, ask an administrator to do it or to change your role.",
+      "Your account can read every application's logs, but managing applications, ingest keys, users and API tokens is held at the administrator role: each of them either issues a live credential or can stop an application logging. Nothing has gone wrong; if you need one of these changed, ask an administrator to do it or to change your role.",
   },
   UNAUTHORIZED: {
     icon: UserX,

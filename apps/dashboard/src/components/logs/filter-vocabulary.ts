@@ -1,12 +1,16 @@
-import { DEVICE_TYPES, LOG_LEVELS, LOG_SOURCES } from "@stuffs-logger/core";
+import {
+  DEVICE_TYPES,
+  LOG_LEVELS,
+  LOG_SOURCES,
+} from "@stuffs-logger/core/taxonomy";
 import type {
   DeviceType,
   LoggerKind,
   LogLevel,
   LogSource,
-} from "@stuffs-logger/core";
+} from "@stuffs-logger/core/taxonomy";
 
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/logs/filters";
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/logs/constants";
 
 import type { BadgeProps } from "../ui/badge";
 
@@ -18,6 +22,12 @@ import type { BadgeProps } from "../ui/badge";
  * the complete set of keys any control, link or form field on `/logs` may
  * emit. Keeping them in one place is what stops a stray `?tab=` creeping into
  * a link and turning a shared URL into an error state.
+ *
+ * IMPORTED FROM LEAVES, NOT BARRELS. This module is reached from the
+ * client-rendered log row, so everything it imports ships to the browser. The
+ * `@stuffs-logger/core` barrel re-exports the ingest schemas and therefore
+ * zod, and `lib/logs/filters.ts` IS a zod schema: either import would put the
+ * whole validator in the bundle to read a few string arrays and two integers.
  */
 
 /** Every search param `/logs` understands. Nothing else may appear in a URL. */

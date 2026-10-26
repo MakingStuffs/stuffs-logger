@@ -2,7 +2,8 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { ApplicationSummary } from "@/lib/logs/dto";
-import { DEFAULT_PAGE_SIZE, parseLogFilters } from "@/lib/logs/filters";
+import { DEFAULT_PAGE_SIZE } from "@/lib/logs/constants";
+import { parseLogFilters } from "@/lib/logs/filters";
 import type { LogFilters } from "@/lib/logs/filters";
 
 import { LOG_FILTER_PARAMS } from "./filter-vocabulary";
@@ -77,6 +78,18 @@ describe("LogFiltersPanel", () => {
     expect(screen.getByLabelText("Application")).toHaveValue("checkout");
   });
 
+  it("echoes a lower bound the user chose back into the From field", () => {
+    renderPanel({ from: NOW });
+
+    expect(screen.getByLabelText("From (UTC)")).toHaveValue("2026-01-15T12:00");
+  });
+
+  it("leaves the From field empty when the lower bound was defaulted, so submitting does not pin it", () => {
+    renderPanel({ search: "timeout", from: NOW, fromDefaulted: true });
+
+    expect(screen.getByLabelText("From (UTC)")).toHaveValue("");
+  });
+
   it("carries an id-scoped filter through as a hidden field", () => {
     const { container } = renderPanel({ applicationId: "app-1" });
 
@@ -112,6 +125,23 @@ describe("LogFiltersPanel", () => {
       "href",
       "/logs",
     );
+  });
+
+  it("makes the all-time link explicit while searching, so the default window cannot override it", () => {
+    renderPanel({ search: "timeout", from: NOW, fromDefaulted: true });
+
+    expect(screen.getByRole("link", { name: "All time" })).toHaveAttribute(
+      "href",
+      "/logs?search=timeout&window=all",
+    );
+  });
+
+  it("carries an explicit all-time window through as a hidden field", () => {
+    const { container } = renderPanel({ search: "timeout", window: "all" });
+
+    expect(
+      container.querySelector('input[type="hidden"][name="window"]'),
+    ).toHaveValue("all");
   });
 
   it("keeps other filters when a quick range is chosen", () => {

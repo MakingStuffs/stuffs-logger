@@ -59,6 +59,52 @@ const REQUIRED_METADATA_FIELDS = [
 const DECLARATION_SUFFIXES = [".d.ts", ".d.cts", ".d.mts"];
 
 /**
+ * Everything a tarball may contain, and nothing else.
+ *
+ * Both manifests declare `"files": ["dist", "README.md", "LICENSE"]` and npm
+ * always adds `package.json`. Anything beyond that set — a `scripts/`
+ * directory, a `.env` that escaped the ignore rules, a `src/` tree, a build
+ * artefact written somewhere new — means the allowlist was widened or npm's
+ * own inclusion rules changed, and a published tarball cannot be recalled.
+ */
+const ALLOWED_TARBALL_FILES = ["package.json", "README.md", "LICENSE"];
+const ALLOWED_TARBALL_PREFIX = "dist/";
+
+/**
+ * Whether a tarball path is one the package is meant to ship.
+ *
+ * @param {string} file - A path relative to the tarball root.
+ * @returns {boolean}
+ */
+function isAllowedTarballFile(file) {
+  return (
+    ALLOWED_TARBALL_FILES.includes(file) ||
+    file.startsWith(ALLOWED_TARBALL_PREFIX)
+  );
+}
+
+/**
+ * Whether a source map `sources` entry (or `sourceRoot`) is relative.
+ *
+ * tsup writes sources relative to the map — `../src/index.ts`,
+ * `../../logger-core/src/json.ts` — which is what lets a consumer's debugger
+ * pair them with the embedded `sourcesContent`. An absolute path
+ * (`/Users/<name>/Dev/…`, `C:\…`) or a URL (`file:///…`, `webpack://…`) would
+ * both leak the publishing machine's directory layout into every consumer's
+ * `node_modules` and point at a file no consumer has.
+ *
+ * @param {unknown} source
+ * @returns {boolean}
+ */
+function isRelativeSource(source) {
+  if (typeof source !== "string") return false;
+  if (source.startsWith("/") || source.startsWith("\\")) return false;
+
+  // A scheme (`file:`, `webpack:`) or a Windows drive letter (`C:`).
+  return !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(source);
+}
+
+/**
  * Lists every file in a directory tree, as paths relative to it.
  *
  * @param {string} dir
@@ -193,6 +239,39 @@ function verifyPackage(relativePackageDir, expectedVersion, scratchRoot) {
     );
   }
 
+  const strayFiles = files.filter((file) => !isAllowedTarballFile(file));
+  if (strayFiles.length > 0) {
+    problems.push(
+      `files outside ${ALLOWED_TARBALL_FILES.join(", ")} and ${ALLOWED_TARBALL_PREFIX}**: ${strayFiles.join(", ")}`,
+    );
+  }
+
+  const sourceMaps = files.filter((file) => file.endsWith(".map"));
+  for (const file of sourceMaps) {
+    let map;
+    try {
+      map = JSON.parse(readFileSync(join(contentsDir, file), "utf8"));
+    } catch {
+      problems.push(`${file} is not a JSON source map`);
+      continue;
+    }
+
+    const sources = Array.isArray(map.sources) ? map.sources : [];
+    const nonRelative = sources.filter((source) => !isRelativeSource(source));
+    if (nonRelative.length > 0) {
+      problems.push(
+        `${file} has non-relative sources: ${nonRelative.slice(0, 3).join(", ")}${nonRelative.length > 3 ? `, … (${nonRelative.length} in all)` : ""}`,
+      );
+    }
+    if (
+      typeof map.sourceRoot === "string" &&
+      map.sourceRoot.length > 0 &&
+      !isRelativeSource(map.sourceRoot)
+    ) {
+      problems.push(`${file} has a non-relative sourceRoot: ${map.sourceRoot}`);
+    }
+  }
+
   const entryPoints = [
     ...["main", "module", "types", "browser", "unpkg"]
       .filter((field) => typeof manifest[field] === "string")
@@ -224,7 +303,10 @@ function verifyPackage(relativePackageDir, expectedVersion, scratchRoot) {
 
   console.log(`\n${manifest.name}@${manifest.version}`);
   console.log(`  tarball    ${tarball}`);
-  console.log(`  files      ${files.length}`);
+  console.log(
+    `  files      ${files.length}, all under ${ALLOWED_TARBALL_PREFIX} or in ${ALLOWED_TARBALL_FILES.join("/")}`,
+  );
+  console.log(`  maps       ${sourceMaps.length} checked for relative sources`);
   console.log(`  entries    ${entryPoints.length} checked`);
   for (const { condition, target } of entryPoints) {
     console.log(`    ${condition} → ${target}`);

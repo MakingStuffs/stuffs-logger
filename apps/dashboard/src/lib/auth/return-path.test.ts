@@ -20,6 +20,9 @@ import {
  * Every case below is a URL an attacker would actually try, and the parser —
  * not a string match — is what refuses them: `app@evil.test` cannot hide its
  * real host behind userinfo, and `\\evil.test` cannot hide behind a backslash.
+ * The dot-segment cases are the subtle ones: `/..//evil.test` IS a path on
+ * this origin as far as the first parse is concerned, but what it normalises
+ * to is `//evil.test`, which a browser reads as another host.
  */
 describe("resolveReturnPath", () => {
   it.each([
@@ -28,6 +31,8 @@ describe("resolveReturnPath", () => {
     ["/logs?level=error&limit=50", "/logs?level=error&limit=50"],
     ["/apps/checkout", "/apps/checkout"],
     ["/logs#event-1", "/logs#event-1"],
+    // A lone backslash is folded into a path separator, not an authority.
+    ["/..\\evil.test", "/evil.test"],
   ])("keeps the same-origin path %o", (input, expected) => {
     expect(resolveReturnPath(input)).toBe(expected);
   });
@@ -42,6 +47,12 @@ describe("resolveReturnPath", () => {
     ["javascript:alert(1)", "javascript scheme"],
     ["data:text/html,<script>alert(1)</script>", "data scheme"],
     ["https://[", "unparseable value"],
+    ["/..//evil.test", "dot segment normalising to a protocol-relative URL"],
+    ["/.//evil.test", "single-dot segment normalising to an authority"],
+    ["/%2e%2e//evil.test", "percent-encoded dot segment"],
+    ["/a/..//evil.test/x", "nested dot segment climbing into an authority"],
+    ["/..\\\\evil.test", "dot segment with backslashes"],
+    ["/..//evil.test?next=1#top", "dot segment keeping a query and fragment"],
   ])("refuses %o (%s) and falls back to the app root", (input) => {
     expect(resolveReturnPath(input)).toBe(DEFAULT_RETURN_PATH);
   });
@@ -57,6 +68,9 @@ describe("resolveReturnPath", () => {
       "https://evil.test",
       "\\\\evil.test",
       "////evil.test",
+      "/..//evil.test",
+      "/%2e%2e//evil.test",
+      "/a/..//evil.test/x",
     ];
 
     for (const candidate of hostile) {
@@ -65,6 +79,25 @@ describe("resolveReturnPath", () => {
       expect(resolved.startsWith("/")).toBe(true);
       expect(resolved.startsWith("//")).toBe(false);
       expect(resolved).not.toContain("evil.test");
+    }
+  });
+
+  it("is idempotent: resolving its own output changes nothing", () => {
+    // The property the dot-segment cases violated. If a resolved path can
+    // resolve to something else, what is emitted is not what was checked.
+    const inputs = [
+      "/logs?level=error",
+      "/apps/checkout#keys",
+      "/..//evil.test",
+      "/a/../b/./c",
+      "/%2e%2e/x",
+      "//evil.test",
+    ];
+
+    for (const input of inputs) {
+      const once = resolveReturnPath(input);
+
+      expect(resolveReturnPath(once)).toBe(once);
     }
   });
 
@@ -94,6 +127,10 @@ describe("buildSignInUrl", () => {
 
     expect(url).not.toContain("evil.test");
     expect(url).toBe(SIGN_IN_PATH);
+  });
+
+  it("sanitises a dot-segment escape rather than emitting it", () => {
+    expect(buildSignInUrl("/..//evil.test")).toBe(SIGN_IN_PATH);
   });
 
   it("stays on this app", () => {

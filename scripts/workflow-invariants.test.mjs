@@ -5,16 +5,17 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * The four security properties every GitHub Actions workflow in this
+ * The five security properties every GitHub Actions workflow in this
  * repository must hold, checked against the real files.
  *
  * WHY THIS IS A TEST RATHER THAN A REVIEW NOTE. Each property below is
  * invisible in the diff that breaks it: swapping `pull_request` for
  * `pull_request_target` is one word, widening a top-level `permissions:` is
- * one line, replacing a SHA pin with a tag looks like a version bump, and
- * interpolating `${{ github.event.… }}` into a `run:` block looks like every
- * other expression in the file. Nothing else in `pnpm test`, `pnpm lint` or CI
- * re-checks them, so without this a future workflow edit regresses all four
+ * one line, `permissions: write-all` on a job is one line, replacing a SHA
+ * pin with a tag looks like a version bump, and interpolating
+ * `${{ github.event.… }}` into a `run:` block looks like every other
+ * expression in the file. Nothing else in `pnpm test`, `pnpm lint` or CI
+ * re-checks them, so without this a future workflow edit regresses all five
  * with a green build.
  *
  * PARSED AS TEXT, NOT AS YAML. `js-yaml` is not a dependency of this
@@ -139,6 +140,64 @@ function topLevelPermissions(lines) {
   return scopes;
 }
 
+/**
+ * Every JOB-level `permissions:` block — the indented ones under `jobs:`, as
+ * opposed to the workflow-level one at column zero.
+ *
+ * @param {string[]} lines - The workflow's lines.
+ * @returns {{ line: number, inline: string | undefined, scopes: { key: string, value: string }[] }[]}
+ *   One entry per block. `inline` carries a same-line value such as
+ *   `write-all`; `scopes` the mapping form's entries.
+ */
+function jobLevelPermissions(lines) {
+  const found = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = /^(\s+)permissions:\s*(.*)$/.exec(lines[index]);
+    if (match === null) continue;
+
+    const [, indent, remainder] = match;
+    const inline = remainder.replace(/#.*$/, "").trim();
+    const scopes = [];
+
+    if (inline.length === 0) {
+      for (let body = index + 1; body < lines.length; body += 1) {
+        const bodyLine = lines[body];
+        if (!isStructural(bodyLine)) continue;
+        if (indentOf(bodyLine) <= indent.length) break;
+
+        const scope = /^\s*([\w-]+):\s*([\w-]+)/.exec(bodyLine);
+        if (scope !== null) scopes.push({ key: scope[1], value: scope[2] });
+      }
+    }
+
+    found.push({
+      line: index + 1,
+      inline: inline.length > 0 ? inline : undefined,
+      scopes,
+    });
+  }
+
+  return found;
+}
+
+/**
+ * The only token scopes any job in this repository has a use for.
+ *
+ * `contents` for the checkout, the auto-format push and the release commit;
+ * `issues` and `pull-requests` for @semantic-release/github's comments;
+ * `id-token` for npm provenance. A job asking for `packages`, `actions`,
+ * `deployments` or anything else is asking for something no step here does,
+ * and the right response is to say so in a failing test rather than to grant
+ * it.
+ */
+const PERMITTED_JOB_SCOPES = [
+  "contents",
+  "issues",
+  "pull-requests",
+  "id-token",
+];
+
 const workflows = readWorkflows();
 
 describe("the workflow files", () => {
@@ -182,6 +241,38 @@ describe("every workflow defaults to a read-only token", () => {
 
     for (const { key, value } of scopes ?? []) {
       expect(`${key}: ${value}`).toMatch(/: (read|none)$/);
+    }
+  });
+});
+
+describe("every job-level permissions block names only the scopes a job here can use", () => {
+  it("sees at least one job-level block", () => {
+    // `ci.yml` and `release.yml` both widen per job; if the scanner ever
+    // stopped finding those blocks the assertions below would pass over an
+    // empty list, which is the one failure mode a guard test must not have.
+    const total = workflows.reduce(
+      (count, { lines }) => count + jobLevelPermissions(lines).length,
+      0,
+    );
+
+    expect(total).toBeGreaterThan(0);
+  });
+
+  it.each(workflows)("$name", ({ lines }) => {
+    for (const block of jobLevelPermissions(lines)) {
+      // `write-all` grants every scope GitHub has, including ones no step in
+      // this repository uses, to a job that may run third-party code; and
+      // `read-all` is the same shorthand in the other direction. A job spells
+      // its scopes out, so the reader can see what it was given.
+      expect(block.inline ?? "", `line ${block.line}`).not.toMatch(
+        /^(write-all|read-all)$/,
+      );
+
+      const unexpected = block.scopes
+        .map(({ key }) => key)
+        .filter((key) => !PERMITTED_JOB_SCOPES.includes(key));
+
+      expect(unexpected, `line ${block.line}`).toEqual([]);
     }
   });
 });

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "@/lib/crypto/digest";
 import { prisma } from "@/lib/db";
 
-import { hashApiToken, verifyApiToken } from "./api-token";
+import { generateApiToken, hashApiToken, verifyApiToken } from "./api-token";
 
 /**
  * The machine-caller credential, proved from the outside.
@@ -186,5 +186,38 @@ describe("verifyApiToken", () => {
 
     expect(JSON.stringify(result)).not.toContain(RAW_TOKEN);
     expect(JSON.stringify(result)).not.toContain(TOKEN_HASH);
+  });
+});
+
+describe("generateApiToken", () => {
+  it("returns a raw token whose stored digest is exactly hashApiToken of it", () => {
+    const { raw, tokenHash } = generateApiToken();
+
+    expect(tokenHash).toBe(hashApiToken(raw));
+    expect(tokenHash).not.toContain(raw);
+  });
+
+  it("carries the API-token prefix over 32 bytes of base64url randomness", () => {
+    const { raw } = generateApiToken();
+
+    expect(raw).toMatch(/^slg_api_[A-Za-z0-9_-]{43}$/);
+  });
+
+  it("never mints the same token twice", () => {
+    const minted = new Set(
+      Array.from({ length: 50 }, () => generateApiToken().raw),
+    );
+
+    expect(minted.size).toBe(50);
+  });
+
+  it("mints a token verifyApiToken accepts as presented, prefix and all", async () => {
+    const { raw, tokenHash } = generateApiToken();
+    tokenExists(makeRow({ tokenHash }));
+
+    await expect(verifyApiToken(raw)).resolves.toEqual({
+      ok: true,
+      token: { tokenId: "token-1", name: "Retention cron" },
+    });
   });
 });

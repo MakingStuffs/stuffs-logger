@@ -14,6 +14,9 @@ const BACKSPACE = String.fromCodePoint(0x08);
 const RIGHT_TO_LEFT_OVERRIDE = String.fromCodePoint(0x202e);
 const POP_DIRECTIONAL = String.fromCodePoint(0x202c);
 const FIRST_STRONG_ISOLATE = String.fromCodePoint(0x2068);
+const LONE_HIGH_SURROGATE = String.fromCodePoint(0xd83d);
+const LONE_LOW_SURROGATE = String.fromCodePoint(0xde00);
+const REPLACEMENT_CHARACTER = String.fromCodePoint(0xfffd);
 
 describe("sanitiseLogText", () => {
   it("removes an ANSI colour sequence and keeps the text", () => {
@@ -26,6 +29,28 @@ describe("sanitiseLogText", () => {
 
   it("removes an OSC sequence including its terminator", () => {
     expect(sanitiseLogText(`${ESC}]0;window title${BEL}text`)).toBe("text");
+  });
+
+  it("removes an OSC sequence terminated by ESC backslash", () => {
+    expect(sanitiseLogText(`${ESC}]8;;https://x.test${ESC}\\link`)).toBe(
+      "link",
+    );
+  });
+
+  it("keeps the text after an OSC introducer that is never terminated", () => {
+    // An optional terminator let this match to the end of the string and the
+    // whole message vanished; only the ESC ] itself may go.
+    expect(sanitiseLogText(`${ESC}]important: payment failed`)).toBe(
+      "important: payment failed",
+    );
+  });
+
+  it("keeps the text when an OSC payload is implausibly long", () => {
+    // Over the payload bound the ESC ] is treated as a stray introducer: it
+    // goes, the text stays, and the BEL goes as an ordinary control.
+    const payload = "p".repeat(5000);
+
+    expect(sanitiseLogText(`${ESC}]${payload}${BEL}`)).toBe(payload);
   });
 
   it("leaves no stranded payload when an escape is stripped", () => {
@@ -68,6 +93,72 @@ describe("sanitiseLogText", () => {
 
   it("leaves an empty string empty", () => {
     expect(sanitiseLogText("")).toBe("");
+  });
+
+  describe("lone surrogates", () => {
+    /**
+     * Runs `fn` with `String.prototype.toWellFormed` hidden, so the regex
+     * fallback that older browsers reach is exercised here on a runtime that
+     * has the native method. On one that does not, `fn` simply runs as-is.
+     */
+    function withoutNativeToWellFormed<T>(fn: () => T): T {
+      const descriptor = Object.getOwnPropertyDescriptor(
+        String.prototype,
+        "toWellFormed",
+      );
+      if (descriptor === undefined) return fn();
+
+      Object.defineProperty(String.prototype, "toWellFormed", {
+        ...descriptor,
+        value: undefined,
+      });
+      try {
+        return fn();
+      } finally {
+        Object.defineProperty(String.prototype, "toWellFormed", descriptor);
+      }
+    }
+
+    it("replaces a lone high surrogate left by a cut at a UTF-16 boundary", () => {
+      expect(sanitiseLogText(`emoji ${LONE_HIGH_SURROGATE}`)).toBe(
+        `emoji ${REPLACEMENT_CHARACTER}`,
+      );
+    });
+
+    it("replaces a lone low surrogate", () => {
+      expect(sanitiseLogText(`${LONE_LOW_SURROGATE} tail`)).toBe(
+        `${REPLACEMENT_CHARACTER} tail`,
+      );
+    });
+
+    it("keeps a well-formed surrogate pair", () => {
+      expect(sanitiseLogText("ok 😀")).toBe("ok 😀");
+    });
+
+    it("replaces unpaired halves without the native toWellFormed", () => {
+      const input = `${LONE_LOW_SURROGATE}a${LONE_HIGH_SURROGATE}😀${LONE_HIGH_SURROGATE}`;
+
+      const result = withoutNativeToWellFormed(() => sanitiseLogText(input));
+
+      expect(result).toBe(
+        `${REPLACEMENT_CHARACTER}a${REPLACEMENT_CHARACTER}😀${REPLACEMENT_CHARACTER}`,
+      );
+    });
+
+    it("keeps a well-formed pair without the native toWellFormed", () => {
+      expect(withoutNativeToWellFormed(() => sanitiseLogText("ok 😀"))).toBe(
+        "ok 😀",
+      );
+    });
+
+    it("judges well-formedness on the output, after the earlier passes", () => {
+      // Stripping the NUL brings the two halves together. Repairing first
+      // would store two U+FFFD; repairing last stores the pair they now form,
+      // and either way nothing unpaired reaches the database.
+      const input = `${LONE_HIGH_SURROGATE}${NUL}${LONE_LOW_SURROGATE}`;
+
+      expect(sanitiseLogText(input)).toBe("😀");
+    });
   });
 });
 

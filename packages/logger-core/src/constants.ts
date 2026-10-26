@@ -37,6 +37,18 @@ export const MAX_ERROR_NAME_LENGTH = 256;
 export const MAX_ERROR_STACK_LENGTH = 16384;
 
 /**
+ * Stored in place of a `message` that sanitises to nothing.
+ *
+ * The schema's `min(1)` runs on the RAW message, so one made entirely of
+ * control characters passes validation and then strips to an empty string.
+ * A row with no message is a row nobody can find, so the server substitutes
+ * this marker — the SAME marker the SDK stores when a message normalises to
+ * nothing on the client (`packages/logger-sdk/src/defaults.ts`), so a reader
+ * sees one placeholder whichever side produced it. Keep the two identical.
+ */
+export const EMPTY_MESSAGE_PLACEHOLDER = "(empty)";
+
+/**
  * How far into the future a client-supplied timestamp may sit before it is
  * treated as a broken clock and clamped to the server's `receivedAt`.
  */

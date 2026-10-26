@@ -18,8 +18,8 @@ matter what goes wrong.
   an event is queued, a `slg_sec_` key is refused outright in the browser, a
   cleartext `http:` endpoint is refused off `localhost`, and no cookies are
   ever sent to the ingest endpoint.
-- **Small.** No third-party code in the bundle: **6.23 KB** gzipped for
-  `createLogger` alone, **7.01 KB** for the whole browser entry point, **7.21 KB**
+- **Small.** No third-party code in the bundle: **6.83 KB** gzipped for
+  `createLogger` alone, **7.55 KB** for the whole browser entry point, **7.81 KB**
   for the drop-in `<script>` build. Every build re-measures and records those
   three figures in `dist/size.json`, which ships in the package — so you can
   check them rather than take this paragraph's word for it.
@@ -88,9 +88,13 @@ to is derived server-side from the verified key. Letting a caller name its own
 application would let anyone holding one key write events into another
 application; the key is the identity, so the SDK never states it.
 
-The endpoint must be `https:` unless its host is `localhost` or `127.0.0.1`.
-An `http:` endpoint anywhere else is refused with an `onError` diagnostic,
-because the key is sent as a request header on every batch.
+The endpoint must be `https:` unless its host is `localhost`, `127.0.0.1` or
+`[::1]`. An `http:` endpoint anywhere else is refused with an `onError`
+diagnostic, because the key is sent as a request header on every batch.
+Anything else in the endpoint URL — embedded `user:password@` credentials, a
+query string, a fragment — is discarded; the credentials are reported through
+`onError` as well, since ingest would never have read them and `fetch` refuses
+a URL that carries them.
 
 ---
 
@@ -119,6 +123,17 @@ logger.info("worker started", { queue: "emails" });
 Both `apiKey` and `endpoint` fall back to `STUFFS_LOGGER_API_KEY` and
 `STUFFS_LOGGER_ENDPOINT`, so with those set in the environment `createLogger()` on
 its own is enough.
+
+`captureErrors` observes; it never changes what the process does with a
+failure. It installs a single `uncaughtExceptionMonitor` listener — the hook
+Node provides for exactly this, which fires alongside the default handling and
+cannot suppress it — and no `uncaughtException` or `unhandledRejection`
+listener at all, so the default crash and whatever `--unhandled-rejections`
+mode you run with are untouched. An exception and a rejection Node is raising
+as one both arrive through that monitor and are recorded as `fatal`, under the
+`uncaughtException` and `unhandledrejection` kinds respectively. A rejection
+that Node is _not_ raising (`--unhandled-rejections=warn` or `none`) is not
+seen, because nothing fatal happened.
 
 In a short-lived script, flush before you finish:
 
@@ -300,7 +315,7 @@ Everything except the key has a working default.
 | `sampleRates`     | —                                                            | Per-level overrides, e.g. `{ debug: 0.1 }`                          |
 | `batchSize`       | `20`                                                         | Queue length that triggers an early flush                           |
 | `flushIntervalMs` | `5000`                                                       | Idle flush cadence                                                  |
-| `maxQueueSize`    | `1000`                                                       | Hard memory bound; the oldest events are dropped                    |
+| `maxQueueSize`    | `1000`                                                       | Hard memory bound; the oldest events are dropped. Capped at 100 000 |
 | `context`         | —                                                            | Static context merged into every event                              |
 | `autoContext`     | `true`                                                       | url/userAgent/viewport in the browser; hostname/pid/version in Node |
 | `sessionId`       | Persisted in `sessionStorage` (browser)                      | Supply your own to correlate with something you already have        |
@@ -317,21 +332,33 @@ about twenty more — has its value replaced with `"[redacted]"` before the even
 is queued. Matching ignores case and punctuation, so `API_KEY`, `api-key`,
 `apiKey` and `x-api-key` are all covered.
 
+An object passed _as_ the message — `console.error({ password })`,
+`logger.info(request)` — is walked by the same rules before it is stringified,
+so its secret-shaped keys are redacted too.
+
 The same matching runs over the captured `url`: query and fragment parameters
 whose NAME looks secret are replaced, and credentials embedded in the authority
-(`https://user:password@host`) are stripped. A password-reset link or an OAuth
-callback is therefore stored without its token.
+(`https://user:password@host`) are stripped. In a url a further set of names is
+matched exactly, because OAuth and OIDC callbacks carry their credentials under
+names too generic to put on the context-key list: `code`, `state`, `nonce`,
+`key`, `sig`, `signature`, `verifier`, `challenge`, `id_token`, `access_token`,
+`refresh_token` and `session_state`. A password-reset link or an OAuth callback
+is therefore stored without its token.
 
 ```
 https://app.example.com/reset?token=abc123&step=2
 https://app.example.com/reset?token=[redacted]&step=2
 ```
 
-**What redaction does not cover.** `message`, `error.message` and `error.stack`
-are sent as written. A token interpolated into a log message is shipped and
-stored: scanning free text for secrets costs a pass over every character on
-your hot path and its false positives silently corrupt the text you are reading
-the log to understand. Keep credentials out of message strings.
+**Path segments are never redacted.** Only parameter names are matched, so a
+secret carried in the path itself (`/reset/abc123`) is stored as written —
+there is no name to recognise it by.
+
+**What redaction does not cover.** `message` strings, `error.message` and
+`error.stack` are sent as written. A token interpolated into a log message is
+shipped and stored: scanning free text for secrets costs a pass over every
+character on your hot path and its false positives silently corrupt the text
+you are reading the log to understand. Keep credentials out of message strings.
 
 ```ts
 createLogger({
@@ -352,13 +379,16 @@ see what it is doing:
 createLogger({
   apiKey,
   onError: (error, context) => {
-    // `context` is e.g. "logger.config", "transport.send"
+    // `context` is e.g. "logger.config", "transport.send", "transport.rejected"
     reportToSomethingElse(error, context);
   },
 });
 ```
 
-`logger.stats` exposes `queued`, `dropped`, `sent` and `failed`.
+`logger.stats` exposes `queued`, `dropped`, `sent` and `failed`. `sent` counts
+the events the server reports it accepted, not the events that were posted: a
+batch ingest took in but partly refused is reported through `onError` as
+`transport.rejected`, and the refused events are not counted as sent.
 
 ---
 
@@ -380,10 +410,13 @@ it needs rather than being sent over the limit and refused. Splitting costs a
 request; being refused would cost the events.
 
 **Failure.** A failed send is retried with exponential backoff capped at 60
-seconds, keeping the events queued. After three consecutive failures the SDK
-probes with a single event at a time instead of a full batch, so a long outage
-costs one small request a minute rather than a spin. A `401`/`403` disables the
-logger outright — the key will not start working.
+seconds, keeping the events queued. A server `Retry-After` can lengthen that
+wait but never shorten it. After three consecutive failures the SDK probes with
+a single event at a time instead of a full batch, so a long outage costs one
+small request a minute rather than a spin. A `401`/`403` disables the logger
+outright — the key will not start working. A redirect is never followed: the
+ingest endpoint does not redirect, and following one would hand the key header
+to whichever origin the redirect named.
 
 **Never throwing.** Every public method is wrapped. A rejecting transport, a
 circular context, an object whose getter throws, a missing global, a broken
@@ -398,24 +431,26 @@ so it cannot re-enter the pipeline.
 
 ## Entry points
 
-Four, exactly as the package's `exports` map declares them:
+Three, exactly as the package's `exports` map declares them:
 
 | Import                       | Build                                                               |
 | ---------------------------- | ------------------------------------------------------------------- |
 | `@stuffs-logger/sdk`         | Isomorphic; a bundler's `browser` condition picks the browser build |
 | `@stuffs-logger/sdk/browser` | DOM only                                                            |
 | `@stuffs-logger/sdk/node`    | Node only                                                           |
-| `@stuffs-logger/sdk/global`  | The minified IIFE that defines `window.StuffsLogger`                |
 
-ESM and CJS are both published for the first three, with matching `.d.ts` and
+ESM and CJS are both published for all three, with matching `.d.ts` and
 `.d.cts`. You only need `/browser` explicitly if your bundler ignores export
 conditions.
 
-`/global` is the file the `<script>` tag above loads — it assigns a global and
-exports nothing, so it is a side-effect import rather than something to name
-bindings from. On a CDN it is
+The `<script>` build is deliberately _not_ an import path. It is the minified
+IIFE at `dist/stuffs-logger.global.js` — on a CDN,
 `https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js`, which is
-also what bare `https://unpkg.com/@stuffs-logger/sdk` resolves to.
+also what bare `https://unpkg.com/@stuffs-logger/sdk` resolves to — and it only
+does its job when loaded by a `<script>` tag: it assigns `window.StuffsLogger`
+as a side effect and exports nothing, so importing it from a bundled module
+would define no bindings and, under tree-shaking, might not run at all. Use the
+module entry points from a bundler and the script URL from HTML.
 
 Requires Node **≥ 22** for the Node entry point; the browser builds target
 ES2022.

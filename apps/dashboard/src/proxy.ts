@@ -30,7 +30,8 @@ import {
  *
  * The matcher excludes `/api/*`: the ingest endpoint is a cross-origin API for
  * other sites' browsers, a script policy means nothing to it, and it must not
- * pay for a proxy hop on the hottest path in the product.
+ * pay for a proxy hop on the hottest path in the product. It also skips the
+ * router's prefetches — see the matcher itself.
  */
 export function proxy(request: NextRequest): NextResponse {
   const nonce = createCspNonce();
@@ -47,10 +48,25 @@ export function proxy(request: NextRequest): NextResponse {
 
 export const config = {
   matcher: [
-    /*
-     * Every document route, and nothing else: API routes, the build output,
-     * the image optimiser and the favicon have no scripts of ours to police.
-     */
-    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+    {
+      /*
+       * Every document route, and nothing else: API routes, the build output,
+       * the image optimiser and the two icon files have no scripts of ours to
+       * police.
+       */
+      source: "/((?!api|_next/static|_next/image|favicon.ico|icon.svg).*)",
+      /*
+       * And not for a router prefetch. A prefetch fetches the payload of a
+       * route the visitor may never open; a nonce minted for it would bless
+       * nothing, and the report-only header would ride on a response no
+       * browser evaluates as a document. Both headers Next sends for one are
+       * named, as its own CSP guide advises. The navigation itself, when it
+       * comes, is a separate request without them and gets its nonce then.
+       */
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
   ],
 } satisfies ProxyConfig;

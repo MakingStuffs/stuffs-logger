@@ -27,6 +27,14 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./constants": "./src/constants.ts",
+    "./json": "./src/json.ts",
+    "./keys": "./src/keys.ts",
+    "./redaction": "./src/redaction.ts",
+    "./schemas": "./src/schemas.ts",
+    "./taxonomy": "./src/taxonomy.ts",
+    "./text": "./src/text.ts",
+    "./timestamps": "./src/timestamps.ts",
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -140,12 +148,12 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "zod": "^4.1.14"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "tsup": "^8.5.0",
+    "tsup": "^8.5.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=22"

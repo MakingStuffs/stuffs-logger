@@ -218,7 +218,26 @@ jobs:
           # pushed again while this run was in flight the patch will not
           # apply, and failing here is the correct outcome — the next run
           # recomputes it.
-          git apply --index --whitespace=nowarn "$RUNNER_TEMP/format/format.patch"
+          #
+          # `--exclude='.github/**'`: THE PATCH IS PULL-REQUEST-AUTHORED DATA
+          # and it is applied here blind, by a job that holds a write token.
+          # Prettier only ever reformats, but the patch is whatever
+          # `format-patch` uploaded, and that job ran the branch's code. A
+          # patch that rewrote a workflow file would be committed and pushed
+          # under this job's identity, which is how a formatting fix could
+          # become a workflow change that no human reviewed. Workflow files
+          # are formatted by their authors; this job never touches them.
+          git apply --index --whitespace=nowarn --exclude='.github/**' \
+            "$RUNNER_TEMP/format/format.patch"
+
+          # A patch that touched ONLY `.github/` leaves nothing staged, and
+          # `git commit` would then fail the job for a fix that was never
+          # going to be pushed. Say so and stop; `format:check` stays red on
+          # the pull request, which is the right signal for the author.
+          if git diff --cached --quiet; then
+            echo "Only files under .github/ needed formatting; run \`pnpm format\` and push." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
           git commit --message "style: apply prettier formatting"
           git push

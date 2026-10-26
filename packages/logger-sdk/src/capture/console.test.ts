@@ -194,4 +194,33 @@ describe("captureConsole", () => {
 
     expect(logger.captured[0]?.level).toBe("debug");
   });
+
+  it("skips a method a frozen console will not let it replace", () => {
+    const originals = { ...host };
+    Object.freeze(host);
+
+    let restore: (() => void) | undefined;
+    expect(() => {
+      restore = subject.captureConsole(logger);
+    }).not.toThrow();
+
+    expect(console.log).toBe(originals.log);
+    console.log("still prints, never captured");
+    expect(logger.captured).toHaveLength(0);
+    expect(() => restore?.()).not.toThrow();
+  });
+
+  it("ignores a method name that is not a console method", () => {
+    // `toString` is a function on the snapshot's prototype; without the
+    // check it would be found there and patched onto the console.
+    expect(() => {
+      subject.captureConsole(logger, {
+        methods: ["toString" as never, "error"],
+      });
+    }).not.toThrow();
+
+    expect(Object.hasOwn(host, "toString")).toBe(false);
+    console.error("still captured");
+    expect(logger.captured).toHaveLength(1);
+  });
 });

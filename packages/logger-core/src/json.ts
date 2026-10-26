@@ -42,8 +42,11 @@ function isContainer(
  * Scalars are depth 0; `{ a: 1 }` is depth 1; `{ a: { b: 1 } }` is depth 2.
  *
  * Iterative rather than recursive on purpose: this runs on attacker-supplied
- * input, and a deeply nested payload must not be able to blow the stack before
- * the depth limit has a chance to reject it.
+ * input and is the ONE walk over a context that is safe on a payload nested
+ * thousands of levels deep. Every other walk recurses — `JSON.stringify`
+ * inside {@link jsonByteLength}, zod's lazy `z.json()` parse — and overflows
+ * the stack on exactly that input. Being iterative only helps if this runs
+ * before those; `schemas.ts` orders its context checks so that it does.
  *
  * @param value - The value to measure.
  * @param limit - Stop descending once this depth is exceeded. The return value

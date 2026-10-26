@@ -14,7 +14,7 @@ interface FakeProcess {
   on: (event: string, listener: Listener) => void;
   off: (event: string, listener: Listener) => void;
   listeners: (event: string) => Listener[];
-  emit: (event: string, payload: unknown) => void;
+  emit: (event: string, ...args: unknown[]) => void;
   registered: Map<string, Listener[]>;
 }
 
@@ -33,8 +33,8 @@ function createFakeProcess(): FakeProcess {
       );
     },
     listeners: (event) => registered.get(event) ?? [],
-    emit(event, payload) {
-      for (const listener of registered.get(event) ?? []) listener(payload);
+    emit(event, ...args) {
+      for (const listener of registered.get(event) ?? []) listener(...args);
     },
   };
 }
@@ -87,11 +87,17 @@ describe("captureErrors in Node", () => {
     expect(runtime.listeners("uncaughtException")).toHaveLength(0);
   });
 
+  it("installs no rejection listener, so the process's --unhandled-rejections mode still applies", () => {
+    captureErrors(logger);
+
+    expect(runtime.listeners("unhandledRejection")).toHaveLength(0);
+  });
+
   it("records an uncaught exception as fatal", () => {
     captureErrors(logger);
     const failure = new Error("catastrophe");
 
-    runtime.emit("uncaughtExceptionMonitor", failure);
+    runtime.emit("uncaughtExceptionMonitor", failure, "uncaughtException");
 
     expect(captured[0]).toMatchObject({
       level: "fatal",
@@ -100,35 +106,29 @@ describe("captureErrors in Node", () => {
     });
   });
 
-  it("records an unhandled rejection", () => {
-    captureErrors(logger, { rethrowUnhandledRejections: false });
+  it("classifies a rejection Node is raising as an uncaught exception", () => {
+    captureErrors(logger);
     const reason = new Error("rejected");
 
-    runtime.emit("unhandledRejection", reason);
+    runtime.emit("uncaughtExceptionMonitor", reason, "unhandledRejection");
 
     expect(captured[0]).toMatchObject({
-      level: "error",
+      level: "fatal",
       logger: "unhandledrejection",
       error: reason,
     });
   });
 
-  it("preserves the default crash when it is the only rejection listener", () => {
-    captureErrors(logger);
-    const reason = new Error("rejected");
-
-    expect(() => {
-      runtime.emit("unhandledRejection", reason);
-    }).toThrow(reason);
-  });
-
-  it("defers to the application's own rejection handling", () => {
-    runtime.on("unhandledRejection", () => {});
+  it("records a rejection once, not once per listener", () => {
     captureErrors(logger);
 
-    expect(() => {
-      runtime.emit("unhandledRejection", new Error("rejected"));
-    }).not.toThrow();
+    runtime.emit(
+      "uncaughtExceptionMonitor",
+      new Error("rejected"),
+      "unhandledRejection",
+    );
+
+    expect(captured).toHaveLength(1);
   });
 
   it("does not install handlers twice", () => {
@@ -142,6 +142,5 @@ describe("captureErrors in Node", () => {
     captureErrors(logger)();
 
     expect(runtime.listeners("uncaughtExceptionMonitor")).toHaveLength(0);
-    expect(runtime.listeners("unhandledRejection")).toHaveLength(0);
   });
 });

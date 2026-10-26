@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { z } from "zod";
 
 import { isAuthSkipped } from "@/constants/environment";
@@ -96,6 +97,14 @@ const UNAUTHENTICATED: SessionAccessResult = {
  * TRUTHINESS WARNING: the refused arm is an OBJECT and therefore truthy.
  * `if (await getSession())` is not an access check — narrow on `hasAccess`.
  *
+ * MEMOISED PER REQUEST with React's `cache()`. The app layout reads the
+ * session to show who is signed in, and the page reads it again to gate
+ * itself; both calls share one Better Auth lookup, so the chrome costs no
+ * second database query. The memo is scoped to the request — nothing is ever
+ * shared across requests — and where no React cache scope exists (a unit
+ * test, a caller outside a render) `cache` is a passthrough and the function
+ * behaves exactly as written.
+ *
  * @returns The granted arm, or a refusal carrying the session when there is
  *   one to carry (a deactivated account) and `null` when there is not.
  * @example
@@ -103,7 +112,7 @@ const UNAUTHENTICATED: SessionAccessResult = {
  * if (!result.hasAccess) return refuse(result.reason);
  * const { user } = result.session;
  */
-export async function getSession(): Promise<SessionAccessResult> {
+export const getSession = cache(async (): Promise<SessionAccessResult> => {
   if (isAuthSkipped()) return { hasAccess: true, session: MOCK_SESSION };
 
   let resolved: unknown;
@@ -130,7 +139,7 @@ export async function getSession(): Promise<SessionAccessResult> {
   }
 
   return { hasAccess: true, session };
-}
+});
 
 /** Per-call options for {@link getSessionOrRedirect}. */
 export interface GetSessionOrRedirectOptions {

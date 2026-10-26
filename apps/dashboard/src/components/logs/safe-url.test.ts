@@ -39,6 +39,16 @@ describe("toSafeHttpUrl", () => {
     expect(toSafeHttpUrl("//evil.test/steal")).toBeNull();
   });
 
+  it("refuses a URL whose userinfo disguises the real host", () => {
+    // Rendered as link text this reads as a link to evil.test and goes to
+    // victim.test — or the reverse, which is the trick.
+    expect(toSafeHttpUrl("https://evil.test@victim.test/")).toBeNull();
+  });
+
+  it("refuses a URL carrying credentials", () => {
+    expect(toSafeHttpUrl("https://user:secret@example.test/")).toBeNull();
+  });
+
   it("refuses a relative path", () => {
     expect(toSafeHttpUrl("/logs")).toBeNull();
   });

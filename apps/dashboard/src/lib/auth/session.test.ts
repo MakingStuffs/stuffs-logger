@@ -194,6 +194,21 @@ describe("getSessionOrRedirect", () => {
     expect(String(target)).not.toContain("evil.test");
   });
 
+  it("refuses a return path that only leaves the origin once normalised", async () => {
+    // `/..//evil.test` parses as a path on this app and normalises to
+    // `//evil.test`, which `redirect()` would send to another host.
+    getBetterAuthSession.mockResolvedValue(null);
+
+    await expect(
+      getSessionOrRedirect({ returnPath: "/..//evil.test" }),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
+
+    const target = vi.mocked(redirect).mock.calls[0]?.[0];
+
+    expect(target).toBe("/sign-in");
+    expect(String(target)).not.toContain("evil.test");
+  });
+
   it("does not bounce a deactivated user into a sign-in they have completed", async () => {
     getBetterAuthSession.mockResolvedValue(
       betterAuthSession({ isActive: false }),

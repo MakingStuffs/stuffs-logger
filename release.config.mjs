@@ -40,10 +40,37 @@ export default {
      * SemVer grammar before writing a byte, because a value interpolated into
      * a shell command deserves to be checked at the far end too.
      *
-     * The publish step builds first so the tarball's `dist/` can only ever be
-     * the code being released. npm credentials come from the environment
-     * (`NODE_AUTH_TOKEN` via the runner's `.npmrc`); nothing here reads or
-     * writes a token, and no lifecycle script in either package does either.
+     * WHICH STEP EACH COMMAND RUNS IN IS THE POINT. semantic-release's order
+     * is verifyConditions → prepare → (the `@semantic-release/git` commit,
+     * then the TAG, then the push) → publish. Anything that fails after the
+     * tag has been pushed leaves a `vX.Y.Z` in git that npm never received,
+     * and semantic-release will not re-run a version it can see a tag for —
+     * so every failure that can be moved in front of the tag is:
+     *
+     *   - `verifyConditionsCmd` exercises the npm credential FIRST, before a
+     *     byte is written. There is no `@semantic-release/npm` in this chain
+     *     (it cannot publish a pnpm workspace), so without this the token is
+     *     first used by the publish itself — after the tag. `pnpm whoami`
+     *     fails closed (`ERR_PNPM_WHOAMI_UNAUTHORIZED`) when the token is
+     *     missing, expired or revoked, and the run stops with nothing tagged.
+     *     It needs a token: if `NPM_TOKEN` is retired for npm trusted
+     *     publishing (docs/CI-CD.md), there is no credential to exercise and
+     *     this line becomes `test -n "$ACTIONS_ID_TOKEN_REQUEST_URL"` — the
+     *     check that the job was granted `id-token: write`.
+     *   - `prepareCmd` syncs the versions, BUILDS, and audits the tarballs
+     *     with `scripts/verify-pack.mjs` — all before the release commit and
+     *     the tag exist, so a broken build or a tarball missing an entry
+     *     point fails a run that can simply be re-run. `dist/` is gitignored,
+     *     so building here changes nothing `@semantic-release/git` commits.
+     *   - `publishCmd` is the publish and nothing else: the one step that
+     *     cannot be moved in front of the tag, with everything that could
+     *     fail already behind it.
+     *
+     * The tarball's `dist/` can only ever be the code being released, because
+     * the build runs in this same job from the verified commit. npm
+     * credentials come from the environment (`NODE_AUTH_TOKEN` via the
+     * runner's `.npmrc`); nothing here reads or writes a token, and no
+     * lifecycle script in either package does either.
      *
      * `--provenance` attaches a signed SLSA attestation naming the workflow,
      * the repository and the commit a version was built from — which is what
@@ -53,14 +80,20 @@ export default {
      * `--access public`, both of which are set. Undocumented in
      * `pnpm publish --help` on the installed pnpm 11.22.0 but accepted:
      * `provenance` is in its npm-config option table and it bundles
-     * libnpmpublish 11.2.0, which reads `opts.provenance`.
+     * libnpmpublish 11.2.0, which reads `opts.provenance`. Confirm it took on
+     * the first rc: `npm view @stuffs-logger/sdk@<version> dist.attestations`
+     * (docs/CI-CD.md has the fallback if it did not).
      */
     [
       "@semantic-release/exec",
       {
-        prepareCmd: "node scripts/sync-versions.mjs ${nextRelease.version}",
-        publishCmd:
+        verifyConditionsCmd:
+          "pnpm whoami --registry https://registry.npmjs.org",
+        prepareCmd:
+          "node scripts/sync-versions.mjs ${nextRelease.version} && " +
           "pnpm --filter @stuffs-logger/core --filter @stuffs-logger/sdk build && " +
+          "node scripts/verify-pack.mjs",
+        publishCmd:
           "pnpm --filter @stuffs-logger/core --filter @stuffs-logger/sdk publish " +
           "--access public --provenance --no-git-checks " +
           "--tag ${nextRelease.channel || 'latest'}",

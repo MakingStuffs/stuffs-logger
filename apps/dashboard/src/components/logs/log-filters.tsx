@@ -20,7 +20,7 @@ import {
   SOURCE_OPTIONS,
 } from "./filter-vocabulary";
 import { toDateTimeLocalValue } from "./format";
-import { LOGS_PATH, timeRangeHref } from "./search-params";
+import { hasSecondaryFilter, LOGS_PATH, timeRangeHref } from "./search-params";
 import { QUICK_RANGES, quickRangeStart } from "./time-ranges";
 
 /**
@@ -59,11 +59,6 @@ export function LogFiltersPanel({
     (left, right) => left - right,
   );
 
-  const hasSecondaryFilter =
-    filters.source !== undefined ||
-    filters.deviceType !== undefined ||
-    filters.environment !== undefined;
-
   return (
     <section
       aria-labelledby="log-filters-heading"
@@ -101,6 +96,11 @@ export function LogFiltersPanel({
             name="applicationId"
             value={filters.applicationId}
           />
+        )}
+        {/* Someone who chose "All time" and then refines their search term
+            should not be bounced back to the default window by the submit. */}
+        {filters.window === undefined ? null : (
+          <input type="hidden" name="window" value={filters.window} />
         )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -151,11 +151,17 @@ export function LogFiltersPanel({
           </Field>
 
           <Field label="From (UTC)" htmlFor="filter-from">
+            {/* A `from` the validator defaulted — an unbounded search's
+                window — is not the user's choice, so the field stays empty:
+                submitting the form would otherwise bake the derived instant
+                into the URL as if it had been typed. */}
             <Input
               id="filter-from"
               name="from"
               type="datetime-local"
-              defaultValue={toDateTimeLocalValue(filters.from)}
+              defaultValue={toDateTimeLocalValue(
+                filters.fromDefaulted === true ? undefined : filters.from,
+              )}
             />
           </Field>
 
@@ -181,7 +187,7 @@ export function LogFiltersPanel({
           ))}
         </ChipFieldset>
 
-        <details open={hasSecondaryFilter} className="group">
+        <details open={hasSecondaryFilter(filters)} className="group">
           <summary className="focus-visible:ring-ring inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-sm font-medium focus-visible:ring-2 focus-visible:outline-none">
             <ChevronDown
               aria-hidden="true"

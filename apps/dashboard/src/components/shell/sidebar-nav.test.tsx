@@ -1,8 +1,14 @@
 import { render, screen } from "@testing-library/react";
-import { Boxes, LayoutDashboard, ScrollText } from "lucide-react";
+import {
+  Boxes,
+  KeyRound,
+  LayoutDashboard,
+  ScrollText,
+  Users,
+} from "lucide-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AppSidebar } from "./sidebar-nav";
+import { AppSidebar, SidebarAccount, SidebarNavGroup } from "./sidebar-nav";
 import type { BasicLink, SidebarUser } from "./sidebar-nav";
 
 // `usePathname` is the one browser-only dependency in the chrome. Mocking the
@@ -25,9 +31,16 @@ function makeUser(overrides: Partial<SidebarUser> = {}): SidebarUser {
   };
 }
 
-function renderSidebar(props: Partial<Parameters<typeof AppSidebar>[0]> = {}) {
+/**
+ * The rail, with whatever belongs at its foot. The account block is passed as
+ * a child rather than as props because that is how the layout renders it: as
+ * its own streamed boundary, so the navigation never waits on a session read.
+ */
+function renderSidebar(children?: React.ReactNode) {
   return render(
-    <AppSidebar appName="Stuffs Logger" links={LINKS} {...props} />,
+    <AppSidebar appName="Stuffs Logger" links={LINKS}>
+      {children}
+    </AppSidebar>,
   );
 }
 
@@ -77,27 +90,34 @@ describe("AppSidebar", () => {
     ).not.toHaveAttribute("aria-current");
   });
 
+  it("renders no account block when none is supplied", () => {
+    renderSidebar();
+
+    expect(screen.queryByText("Ada Lovelace")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /sign out/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("SidebarAccount", () => {
   it("shows who is signed in", () => {
-    renderSidebar({ user: makeUser() });
+    renderSidebar(<SidebarAccount user={makeUser()} />);
 
     expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
     expect(screen.getByText("ada@makingstuffs.test")).toBeInTheDocument();
   });
 
   it("shows what the account may do, so a refusal elsewhere makes sense", () => {
-    renderSidebar({ user: makeUser({ role: "Administrator" }) });
+    renderSidebar(
+      <SidebarAccount user={makeUser({ role: "Administrator" })} />,
+    );
 
     expect(screen.getByText("Administrator")).toBeInTheDocument();
   });
 
-  it("renders no account block when nobody is signed in", () => {
-    renderSidebar();
-
-    expect(screen.queryByText("Ada Lovelace")).not.toBeInTheDocument();
-  });
-
   it("offers a way out when the app supplies one", () => {
-    renderSidebar({ user: makeUser(), signOutAction: vi.fn() });
+    renderSidebar(<SidebarAccount user={makeUser()} signOutAction={vi.fn()} />);
 
     expect(
       screen.getByRole("button", { name: /sign out/i }),
@@ -105,7 +125,7 @@ describe("AppSidebar", () => {
   });
 
   it("signs out through a form, not a link, so it cannot be triggered by a URL", () => {
-    renderSidebar({ user: makeUser(), signOutAction: vi.fn() });
+    renderSidebar(<SidebarAccount user={makeUser()} signOutAction={vi.fn()} />);
 
     expect(screen.getByRole("button", { name: /sign out/i })).toHaveAttribute(
       "type",
@@ -114,10 +134,96 @@ describe("AppSidebar", () => {
   });
 
   it("offers no sign-out when the app supplies no handler", () => {
-    renderSidebar({ user: makeUser() });
+    renderSidebar(<SidebarAccount user={makeUser()} />);
 
     expect(
       screen.queryByRole("button", { name: /sign out/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("SidebarNavGroup", () => {
+  const ADMIN_LINKS: BasicLink[] = [
+    { label: "Users", href: "/users", icon: Users },
+    { label: "API tokens", href: "/tokens", icon: KeyRound },
+  ];
+
+  it("is its own navigation landmark, named by its heading", () => {
+    render(
+      <AppSidebar
+        appName="Stuffs Logger"
+        links={LINKS}
+        secondaryNav={
+          <SidebarNavGroup label="Administration" links={ADMIN_LINKS} />
+        }
+      />,
+    );
+
+    const group = screen.getByRole("navigation", { name: "Administration" });
+
+    expect(group).toContainElement(
+      screen.getByRole("link", { name: /users/i }),
+    );
+    expect(screen.getByRole("link", { name: /api tokens/i })).toHaveAttribute(
+      "href",
+      "/tokens",
+    );
+  });
+
+  it("leaves the main navigation's entries where they were", () => {
+    render(
+      <AppSidebar
+        appName="Stuffs Logger"
+        links={LINKS}
+        secondaryNav={
+          <SidebarNavGroup label="Administration" links={ADMIN_LINKS} />
+        }
+      />,
+    );
+
+    expect(screen.queryByRole("link", { name: /users/i })).not.toBeNull();
+    expect(
+      screen.getByRole("navigation", { name: "Main" }),
+    ).not.toContainElement(screen.getByRole("link", { name: /users/i }));
+  });
+
+  it("marks the admin section the reader is in", () => {
+    usePathname.mockReturnValue("/users");
+    render(<SidebarNavGroup label="Administration" links={ADMIN_LINKS} />);
+
+    expect(screen.getByRole("link", { name: /users/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+});
+
+describe("SidebarAccount — account link", () => {
+  it("offers the account page when the app supplies one", () => {
+    renderSidebar(
+      <SidebarAccount
+        user={makeUser()}
+        accountHref="/account"
+        signOutAction={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute(
+      "href",
+      "/account",
+    );
+    // Still a form button, unchanged, beside it.
+    expect(screen.getByRole("button", { name: /sign out/i })).toHaveAttribute(
+      "type",
+      "submit",
+    );
+  });
+
+  it("offers no account link when none is supplied", () => {
+    renderSidebar(<SidebarAccount user={makeUser()} />);
+
+    expect(
+      screen.queryByRole("link", { name: "Account" }),
     ).not.toBeInTheDocument();
   });
 });

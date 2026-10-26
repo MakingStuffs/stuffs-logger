@@ -161,19 +161,28 @@ jobs:
       - name: Install the Playwright browser
         run: pnpm --filter @stuffs-logger/dashboard exec playwright install --with-deps chromium
 
-      # Builds the SDK the round-trip spec loads, then runs the suite. The
-      # Playwright config builds and starts the dashboard itself against the
-      # service container, applies the migrations and seeds the fixtures.
-      - name: Run the e2e suite
-        run: pnpm test:e2e
-
-      # The same tagged subset a deploy runs, pointed at the server this job
-      # just proved. It runs on every pull request so the suite that gates
+      # BOTH SUITES, ONE SERVER, ONE INVOCATION. `pnpm test:e2e` builds the
+      # SDK the round-trip spec loads and runs Playwright with
+      # `--project=chromium`; pnpm appends the extra `--project=smoke` to the
+      # script it runs (and the root script forwards it to the dashboard's),
+      # so the smoke chain runs in the same process as the e2e chain, against
+      # the same managed dashboard, with no second `next build` and no second
+      # `next start`. The Playwright config builds and starts that dashboard
+      # against the service container, applies the migrations and seeds the
+      # fixtures; `SMOKE_BASE_URL` names the same server for the smoke
+      # project, which the config then makes wait for `migrate` (see
+      # `smokeTargetsManagedServer` in playwright.config.ts).
+      #
+      # `E2E_BASE_URL` is deliberately NOT set: here the managed server IS the
+      # target. Setting it is how `smoke.yml` says "the server is somebody
+      # else's", and it would skip the build this job exists to prove.
+      #
+      # The smoke subset runs on every pull request so the suite that gates
       # production is never the one nobody exercises.
-      - name: Run the smoke suite against the local server
+      - name: Run the e2e and smoke suites
         env:
           SMOKE_BASE_URL: http://127.0.0.1:3000
-        run: pnpm test:smoke
+        run: pnpm test:e2e --project=smoke
 
       # Only on failure: a green run's report is a hundred megabytes nobody
       # opens. Traces and screenshots live under `test-results/`; neither ever

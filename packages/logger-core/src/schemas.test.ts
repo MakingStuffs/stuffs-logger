@@ -8,8 +8,12 @@ import {
   MAX_SHORT_FIELD_LENGTH,
 } from "./constants";
 import type { JsonValue } from "./json";
-import { parseIngestBatch } from "./schemas";
-import type { IngestBatch, LogEventPayload } from "./schemas";
+import { parseIngestBatch, parseLogEvent } from "./schemas";
+import type {
+  IngestBatch,
+  IngestBatchParseResult,
+  LogEventPayload,
+} from "./schemas";
 
 function makeEvent(overrides: Partial<LogEventPayload> = {}): LogEventPayload {
   return {
@@ -36,6 +40,19 @@ function nestToDepth(depth: number): Record<string, JsonValue> {
   let node: Record<string, JsonValue> = { leaf: 1 };
   for (let level = 1; level < depth; level += 1) node = { nested: node };
   return node;
+}
+
+/**
+ * Deep enough to overflow the stack of any recursive walk. The iterative
+ * depth check must refuse this before zod or `JSON.stringify` ever see it.
+ */
+const STACK_BREAKING_DEPTH = 5000;
+
+/** A context whose only value is an array nested `STACK_BREAKING_DEPTH` deep. */
+function stackBreakingContext(): Record<string, JsonValue> {
+  let node: JsonValue = [1];
+  for (let level = 0; level < STACK_BREAKING_DEPTH; level += 1) node = [node];
+  return { deep: node };
 }
 
 describe("parseIngestBatch", () => {
@@ -205,6 +222,58 @@ describe("parseIngestBatch", () => {
     ).toBe(false);
   });
 
+  it("rejects, rather than throws on, a context nested thousands of levels deep", () => {
+    const batch = makeBatch({
+      events: [makeEvent({ context: stackBreakingContext() })],
+    });
+    let result: IngestBatchParseResult | undefined;
+
+    expect(() => {
+      result = parseIngestBatch(batch);
+    }).not.toThrow();
+
+    expect(result?.ok).toBe(false);
+    if (result === undefined || result.ok) return;
+    expect(result.issues[0]).toEqual({
+      path: "events.0.context",
+      message: `context must not nest more than ${MAX_CONTEXT_DEPTH} levels deep`,
+    });
+  });
+
+  it("rejects a context that is not an object", () => {
+    const events = [
+      { ...makeEvent(), context: [1, 2] } as unknown as LogEventPayload,
+      { ...makeEvent(), context: "text" } as unknown as LogEventPayload,
+      { ...makeEvent(), context: null } as unknown as LogEventPayload,
+    ];
+
+    for (const event of events) {
+      expect(parseIngestBatch(makeBatch({ events: [event] })).ok).toBe(false);
+    }
+  });
+
+  it("does not echo the caller's key names when rejecting unknown keys", () => {
+    const hostileKey = `<img src=x onerror=alert(1)>${"k".repeat(2000)}`;
+    const result = parseIngestBatch({ ...makeBatch(), [hostileKey]: 1 });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues).toEqual([
+      { path: "", message: "unrecognized keys are not allowed" },
+    ]);
+  });
+
+  it("does not echo unknown event keys either", () => {
+    const events = [
+      { ...makeEvent(), stolenField: 1 } as unknown as LogEventPayload,
+    ];
+    const result = parseIngestBatch(makeBatch({ events }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(JSON.stringify(result.issues)).not.toContain("stolenField");
+  });
+
   it("reports the path of the offending field", () => {
     const result = parseIngestBatch(
       makeBatch({ events: [makeEvent({ message: "" })] }),
@@ -222,5 +291,18 @@ describe("parseIngestBatch", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.issues.length).toBeLessThanOrEqual(20);
+  });
+});
+
+describe("parseLogEvent", () => {
+  it("accepts a valid event", () => {
+    expect(parseLogEvent(makeEvent()).ok).toBe(true);
+  });
+
+  it("rejects, rather than throws on, a stack-breaking context", () => {
+    const event = makeEvent({ context: stackBreakingContext() });
+
+    expect(() => parseLogEvent(event)).not.toThrow();
+    expect(parseLogEvent(event).ok).toBe(false);
   });
 });

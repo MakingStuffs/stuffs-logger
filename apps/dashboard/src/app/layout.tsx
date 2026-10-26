@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Analytics } from "@vercel/analytics/next";
 
 import { APP_DISPLAY_NAME } from "@/constants/environment";
 
@@ -46,8 +45,27 @@ export default function RootLayout({
     <html lang="en">
       <body>
         {children}
-        <Analytics />
+        <VercelAnalytics />
       </body>
     </html>
   );
+}
+
+/**
+ * Vercel's analytics, on Vercel only.
+ *
+ * `<Analytics />` injects a script tag for `/_vercel/insights/script.js`,
+ * which only Vercel's own edge serves. Self-hosted, that is a 404 on every
+ * page view and a console error in every session — on a product whose whole
+ * point is a clean console. `VERCEL=1` is set by the platform at build and run
+ * time, so the decision is made on the server, and the import is dynamic so a
+ * self-hosted build ships no analytics code to the browser either: the
+ * component's client chunk is only referenced when it is actually rendered.
+ */
+async function VercelAnalytics() {
+  if (process.env.VERCEL !== "1") return null;
+
+  const { Analytics } = await import("@vercel/analytics/next");
+
+  return <Analytics />;
 }

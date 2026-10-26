@@ -10,7 +10,11 @@ import {
   resolveReturnPath,
   SIGN_IN_PATH,
 } from "@/lib/auth/return-path";
-import { consumeSignInAttempt } from "@/lib/auth/sign-in-throttle";
+import {
+  clearSignInAttempts,
+  consumeSignInAttempt,
+  resolveClientIp,
+} from "@/lib/auth/sign-in-throttle";
 
 import { SIGN_IN_ERROR_PARAM, type SignInError } from "./errors";
 
@@ -27,7 +31,11 @@ import { SIGN_IN_ERROR_PARAM, type SignInError } from "./errors";
  * THE PRICE, AND HOW IT IS PAID: `auth.api.*` calls skip Better Auth's HTTP
  * router, and the router is where its rate limiting lives. Every password
  * attempt is therefore counted through `consumeSignInAttempt` before it is
- * tried, or this would be an unthrottled guessing endpoint.
+ * tried, or this would be an unthrottled guessing endpoint. The router's own
+ * sign-in route is switched off (`disabledPaths` in `lib/auth/auth.ts`), so
+ * this action is the only way a password reaches the hash and the throttle
+ * here is the only one that needs to be right. A success clears the count,
+ * because the windows exist to bound failures.
  *
  * FAILURES REDIRECT BACK RATHER THAN RETURNING STATE, so the page needs no
  * client component to render them and a reload cannot resubmit a password.
@@ -89,16 +97,19 @@ export async function signInWithPasswordAction(
   );
   if (!parsed.success) redirect(failureUrl("credentials", returnPath));
 
+  const requestHeaders = await headers();
+  const clientIp = resolveClientIp(requestHeaders);
+
   // Counted BEFORE the credential is tried, so a guessing loop is refused
   // without ever reaching the password hash.
-  const attempt = consumeSignInAttempt(parsed.data.email);
+  const attempt = consumeSignInAttempt(parsed.data.email, clientIp);
   if (!attempt.allowed) redirect(failureUrl("throttled", returnPath));
 
   let signedIn = false;
   try {
     await auth.api.signInEmail({
       body: { email: parsed.data.email, password: parsed.data.password },
-      headers: await headers(),
+      headers: requestHeaders,
     });
     signedIn = true;
   } catch {
@@ -109,6 +120,9 @@ export async function signInWithPasswordAction(
   }
 
   if (!signedIn) redirect(failureUrl("credentials", returnPath));
+
+  // The owner just proved the attempts before this one were theirs.
+  clearSignInAttempts(parsed.data.email, clientIp);
 
   redirect(returnPath);
 }

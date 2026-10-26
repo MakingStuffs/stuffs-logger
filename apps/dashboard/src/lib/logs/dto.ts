@@ -78,7 +78,12 @@ export interface LogEventDetail extends LogEventListItem {
 /** One page of the log stream. */
 export interface LogEventPage {
   items: LogEventListItem[];
-  /** Pass back as `cursor` to fetch the next page; `null` at the end. */
+  /**
+   * Pass back as `cursor` to fetch the next page; `null` at the end.
+   *
+   * An opaque keyset token (the last row's timestamp and id, encoded by
+   * `lib/logs/filters`). The UI carries it verbatim and never parses it.
+   */
   nextCursor: string | null;
   /** Whether another page exists. */
   hasMore: boolean;

@@ -48,6 +48,13 @@ export const LogRow = memo(function LogRow({
 }: LogRowProps) {
   const detailId = `log-detail-${event.id}`;
 
+  // Parsed ONCE per row. The instant is shown three times — the cell, its
+  // `title`, the expand control's label — and on a 200-row page three parses
+  // per row is 400 more `Date` constructions than the page needs. An
+  // unparseable value becomes an invalid `Date`, which the formatters render
+  // as the placeholder exactly as they would the string.
+  const timestamp = new Date(event.timestamp);
+
   return (
     <Fragment>
       <TableRow data-state={isExpanded ? "selected" : undefined}>
@@ -68,16 +75,16 @@ export const LogRow = memo(function LogRow({
             />
             <span className="sr-only">
               {isExpanded ? "Hide details for" : "Show details for"} the event
-              at {formatUtcTimestamp(event.timestamp)}
+              at {formatUtcTimestamp(timestamp)}
             </span>
           </button>
         </TableCell>
 
         <TableCell
           className="text-muted-foreground py-2 font-mono text-xs whitespace-nowrap"
-          title={formatUtcTimestampLong(event.timestamp)}
+          title={formatUtcTimestampLong(timestamp)}
         >
-          {formatUtcTimestamp(event.timestamp)}
+          {formatUtcTimestamp(timestamp)}
         </TableCell>
 
         <TableCell className="py-2">

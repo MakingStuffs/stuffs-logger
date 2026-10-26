@@ -3,7 +3,24 @@
 import { TriangleAlert } from "lucide-react";
 import { useEffect } from "react";
 
-import { Button } from "@/components/ui/button";
+/**
+ * The outline button's classes, copied from `buttonVariants` rather than
+ * imported through `Button`.
+ *
+ * This boundary is a client component on EVERY route, the sign-in page
+ * included — a page that otherwise ships no component code at all. Importing
+ * `Button` here would pull class-variance-authority, clsx and tailwind-merge
+ * into that page's bundle to style one control that is only ever seen when
+ * something has already gone wrong. The two class lists have to be kept in
+ * step by hand; `size="sm"` and `variant="outline"` are the pair to match.
+ */
+const OUTLINE_BUTTON_CLASS = [
+  "inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5",
+  "rounded-md border px-3 text-xs font-medium whitespace-nowrap",
+  "border-control bg-card text-foreground hover:bg-accent hover:text-accent-foreground",
+  "transition-colors motion-reduce:transition-none",
+  "focus-visible:ring-ring/40 focus-visible:border-ring focus-visible:ring-2 focus-visible:outline-none",
+].join(" ");
 
 /**
  * The route error boundary.
@@ -39,9 +56,9 @@ export default function RouteError({
           Reference: {error.digest}
         </p>
       )}
-      <Button type="button" variant="outline" size="sm" onClick={reset}>
+      <button type="button" className={OUTLINE_BUTTON_CLASS} onClick={reset}>
         Try again
-      </Button>
+      </button>
     </main>
   );
 }

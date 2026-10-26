@@ -33,7 +33,11 @@ export {
   SECRET_KEY_PREFIX,
 } from "@stuffs-logger/core/constants";
 
-export { LOG_LEVELS, levelRank } from "@stuffs-logger/core/taxonomy";
+export {
+  LOG_LEVELS,
+  LOGGER_KINDS,
+  levelRank,
+} from "@stuffs-logger/core/taxonomy";
 
 /**
  * Redaction is ONE control with two ends, so it is one implementation. The
@@ -44,11 +48,12 @@ export { LOG_LEVELS, levelRank } from "@stuffs-logger/core/taxonomy";
 export {
   createKeyRedactor,
   DEFAULT_REDACTION_KEYS,
+  normaliseRedactionKey,
 } from "@stuffs-logger/core/redaction";
 
 export type { KeyRedactor } from "@stuffs-logger/core/redaction";
 
-export { jsonByteLength } from "@stuffs-logger/core/json";
+export { jsonByteLength, setJsonEntry } from "@stuffs-logger/core/json";
 
 export { parseIngestKey } from "@stuffs-logger/core/keys";
 

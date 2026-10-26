@@ -1,5 +1,6 @@
 import {
   clampEventTimestamp,
+  EMPTY_MESSAGE_PLACEHOLDER,
   parseLogEvent,
   redactJson,
   sanitiseJsonText,
@@ -8,10 +9,12 @@ import {
   type IngestEnvelope,
   type IngestValidationIssue,
   type JsonValue,
+  type LogEventParseResult,
   type LogEventPayload,
 } from "@stuffs-logger/core";
 import type { Prisma } from "@prisma/client";
 
+import { isApiError } from "@/lib/api/errors";
 import {
   DEVICE_TO_DB,
   LEVEL_TO_DB,
@@ -39,9 +42,11 @@ import { parseUserAgent } from "./user-agent";
  *    at all. THIS pass is the authoritative one: it runs on every batch, it
  *    uses the server's key list, and nothing in the request can disable it.
  *  - **Text sanitisation.** Control characters, ANSI escapes and bidi
- *    overrides are stripped from every stored string. Inert in React today;
- *    not inert in a terminal tail, a CSV export, or the dashboard's own
- *    rendering of a right-to-left override.
+ *    overrides are stripped from EVERY stored string — the event's own fields
+ *    and the envelope's labels alike. Inert in React today; not inert in a
+ *    terminal tail, a CSV export, or the dashboard's own rendering of a
+ *    right-to-left override. And a NUL in any of them would make Postgres
+ *    refuse the whole insert.
  */
 
 /** What the caller is told about an event that did not make it. */
@@ -74,6 +79,91 @@ export interface NormaliseContext {
    * a browser sets automatically and the SDK does not have to duplicate.
    */
   fallbackUserAgent: string | null;
+}
+
+/**
+ * Stored as `environment` when the one the batch declared sanitises to
+ * nothing. See {@link sanitiseEnvelopeLabels} for why it is not a rejection.
+ */
+export const UNKNOWN_ENVIRONMENT = "unknown";
+
+/** The issue reported for an event whose validation itself failed. */
+const UNVALIDATABLE_EVENT_ISSUES: IngestValidationIssue[] = [
+  { path: "", message: "event could not be validated" },
+];
+
+/**
+ * Validates one raw event, treating a validator CRASH as a rejection.
+ *
+ * `parseLogEvent` is specified never to throw, and the schema is built so a
+ * hostile shape is refused rather than walked. This is the backstop for the
+ * day that stops being true: an event that makes the validator throw is
+ * reported as rejected and the other ninety-nine are still stored, instead
+ * of the whole batch becoming a 500 AFTER its quota was charged. An
+ * `ApiError` is a deliberate refusal and is re-thrown; anything else is a
+ * bug in the validator, worth a log line but never a lost batch.
+ */
+function parseEventSafely(raw: unknown): LogEventParseResult {
+  try {
+    return parseLogEvent(raw);
+  } catch (error) {
+    if (isApiError(error)) throw error;
+
+    const name = error instanceof Error ? error.name : "non-Error";
+    console.warn(`[ingest.normalise] event validator threw ${name}`);
+    return { ok: false, issues: UNVALIDATABLE_EVENT_ISSUES };
+  }
+}
+
+/** The batch-level labels every row carries, sanitised. */
+interface EnvelopeLabels {
+  environment: string;
+  release: string | null;
+  sessionId: string | null;
+}
+
+/** An optional label that sanitised to nothing is stored as absent. */
+function emptyToNull(value: string | null): string | null {
+  return value === null || value.length === 0 ? null : value;
+}
+
+/**
+ * Sanitises the envelope's free-text labels.
+ *
+ * `environment`, `release` and `sessionId` are written onto every row and
+ * shown as facet labels, so they get the same pass as a message: a bidi
+ * override in a facet reorders the facet list, an ANSI sequence in one
+ * colours a terminal, and a NUL in any of them is a refused insert.
+ *
+ * The schema requires a non-empty `environment`, but it checks the RAW
+ * value, so one made of nothing but control characters passes and sanitises
+ * to "". That batch still needs a label. It falls back to
+ * {@link UNKNOWN_ENVIRONMENT} rather than refusing the batch: by the time
+ * this runs the quota is charged and the events are good, and any caller
+ * who can name an environment "unknown" could name it anything else. An
+ * optional label that sanitises to nothing becomes `null`, which is what
+ * "absent" already means for it.
+ */
+function sanitiseEnvelopeLabels(envelope: IngestEnvelope): EnvelopeLabels {
+  const environment = sanitiseLogText(envelope.environment);
+
+  return {
+    environment: environment.length === 0 ? UNKNOWN_ENVIRONMENT : environment,
+    release: emptyToNull(sanitiseOptionalLogText(envelope.release)),
+    sessionId: emptyToNull(sanitiseOptionalLogText(envelope.sessionId)),
+  };
+}
+
+/**
+ * Sanitises a message, never storing it empty.
+ *
+ * The schema's `min(1)` ran on the raw value; a message that was nothing but
+ * escape sequences is empty by now, and an empty message is a row nobody can
+ * find. The placeholder is the SDK's own, so a reader sees one marker.
+ */
+function sanitiseMessage(message: string): string {
+  const sanitised = sanitiseLogText(message);
+  return sanitised.length === 0 ? EMPTY_MESSAGE_PLACEHOLDER : sanitised;
 }
 
 /**
@@ -118,8 +208,11 @@ export function normaliseBatch(
   const rejected: RejectedEvent[] = [];
   let clampedCount = 0;
 
+  // Once per batch, not once per row: the labels are the same on every row.
+  const labels = sanitiseEnvelopeLabels(envelope);
+
   envelope.events.forEach((raw, index) => {
-    const parsed = parseLogEvent(raw);
+    const parsed = parseEventSafely(raw);
     if (!parsed.ok) {
       rejected.push({ index, issues: parsed.issues });
       return;
@@ -144,13 +237,13 @@ export function normaliseBatch(
       timestamp,
       receivedAt: context.receivedAt,
       level: LEVEL_TO_DB[event.level],
-      message: sanitiseLogText(event.message),
+      message: sanitiseMessage(event.message),
       logger: LOGGER_TO_DB[event.logger],
       context: prepareContext(event.context),
-      environment: envelope.environment,
-      release: envelope.release ?? null,
+      environment: labels.environment,
+      release: labels.release,
       source: SOURCE_TO_DB[envelope.source],
-      sessionId: envelope.sessionId ?? null,
+      sessionId: labels.sessionId,
       url: sanitiseOptionalLogText(event.url),
       userAgent: sanitiseOptionalLogText(userAgent),
       deviceType: DEVICE_TO_DB[agent.deviceType],

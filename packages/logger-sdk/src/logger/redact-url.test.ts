@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { MAX_URL_LENGTH } from "../contract";
 import { createRedactor } from "./redact";
@@ -19,11 +19,11 @@ describe("redactUrl", () => {
   it("redacts secret-shaped fragment parameters, where OAuth puts tokens", () => {
     expect(
       redactUrl(
-        "https://app.example.com/callback#access_token=abc123&state=xyz",
+        "https://app.example.com/callback#access_token=abc123&expires_in=3600",
         redactor,
       ),
     ).toBe(
-      "https://app.example.com/callback#access_token=[redacted]&state=xyz",
+      "https://app.example.com/callback#access_token=[redacted]&expires_in=3600",
     );
   });
 
@@ -83,5 +83,55 @@ describe("redactUrl", () => {
 
   it("returns a value it cannot parse unchanged rather than throwing", () => {
     expect(redactUrl("not a url at all", redactor)).toBe("not a url at all");
+  });
+
+  it("redacts the OAuth and OIDC callback parameters the shared key list does not name", () => {
+    expect(
+      redactUrl(
+        "https://a.com/cb?code=AUTHCODE&state=s&key=K&sig=S#access_token=y",
+        redactor,
+      ),
+    ).toBe(
+      "https://a.com/cb?code=[redacted]&state=[redacted]&key=[redacted]&sig=[redacted]#access_token=[redacted]",
+    );
+  });
+
+  it("matches url-only names whatever their casing or punctuation", () => {
+    expect(
+      redactUrl("https://a.com/cb#id_token=x&ID-Token=y&nonce=n", redactor),
+    ).toBe(
+      "https://a.com/cb#id_token=[redacted]&ID-Token=[redacted]&nonce=[redacted]",
+    );
+  });
+
+  it("matches url-only names exactly, so a postcode or a keyword survives", () => {
+    const url = "https://a.com/search?keyword=shoes&postcode=SW1A&page=2";
+
+    expect(redactUrl(url, redactor)).toBe(url);
+  });
+
+  it("does not apply the url-only names to context keys", () => {
+    for (const key of ["code", "state", "key", "nonce"]) {
+      expect(redactor?.shouldRedact(key), key).toBe(false);
+    }
+  });
+
+  it("never touches a path segment", () => {
+    const url = "https://a.com/reset/token/abc123/password/x";
+
+    expect(redactUrl(url, redactor)).toBe(url);
+  });
+
+  it("remembers the last url it redacted rather than parsing it again", () => {
+    const shouldRedact = vi.fn((key: string) => key === "token");
+    const spy = { shouldRedact, replacement: "[redacted]" };
+    const url = "https://a.com/?token=1&page=2";
+
+    const first = redactUrl(url, spy);
+    const verdicts = shouldRedact.mock.calls.length;
+    const second = redactUrl(url, spy);
+
+    expect(second).toBe(first);
+    expect(shouldRedact.mock.calls.length).toBe(verdicts);
   });
 });

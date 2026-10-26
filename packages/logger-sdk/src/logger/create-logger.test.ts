@@ -517,15 +517,15 @@ describe("createLoggerWith", () => {
       await logger.flush();
 
       const bodies = fetchMock.mock.calls.map(
-        (call) => (call[1] as { body: string }).body,
+        (call) => (call[1] as { body: Uint8Array }).body,
       );
       expect(bodies.length).toBeGreaterThan(1);
       let delivered = 0;
       for (const body of bodies) {
-        expect(new TextEncoder().encode(body).length).toBeLessThanOrEqual(
-          MAX_BODY_BYTES,
-        );
-        delivered += (JSON.parse(body) as { events: unknown[] }).events.length;
+        expect(body.length).toBeLessThanOrEqual(MAX_BODY_BYTES);
+        delivered += (
+          JSON.parse(new TextDecoder().decode(body)) as { events: unknown[] }
+        ).events.length;
       }
       expect(delivered).toBe(25);
       expect(logger.stats.dropped).toBe(0);
@@ -625,13 +625,16 @@ describe("createLoggerWith", () => {
       await logger.flush();
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const body = (fetchMock.mock.calls[0]?.[1] as { body: string }).body;
-      const size = new TextEncoder().encode(body).length;
-      expect(size).toBeGreaterThan(MAX_KEEPALIVE_BODY_BYTES);
-      expect(size).toBeLessThanOrEqual(MAX_BODY_BYTES);
-      expect((JSON.parse(body) as { events: unknown[] }).events).toHaveLength(
-        1,
-      );
+      const body = (fetchMock.mock.calls[0]?.[1] as { body: Uint8Array }).body;
+      expect(body.length).toBeGreaterThan(MAX_KEEPALIVE_BODY_BYTES);
+      expect(body.length).toBeLessThanOrEqual(MAX_BODY_BYTES);
+      expect(
+        (
+          JSON.parse(new TextDecoder().decode(body)) as {
+            events: unknown[];
+          }
+        ).events,
+      ).toHaveLength(1);
       expect(logger.stats.sent).toBe(1);
       expect(logger.stats.dropped).toBe(0);
       vi.unstubAllGlobals();
@@ -740,6 +743,38 @@ describe("createLoggerWith", () => {
 
       expect(transport.batches).toHaveLength(0);
       expect(logger.enabled).toBe(false);
+    });
+
+    it("caps an absurd maxQueueSize instead of throwing out of createLogger", () => {
+      const transport = createFakeTransport();
+
+      let logger: Logger | undefined;
+      expect(() => {
+        logger = makeLogger(transport, { maxQueueSize: 1e10, batchSize: 100 });
+      }).not.toThrow();
+
+      // One more event than the ceiling: the queue was allocated at the
+      // ceiling, so exactly one event is dropped.
+      for (let index = 0; index <= 100_000; index += 1) logger?.info("x");
+
+      expect(logger?.stats).toMatchObject({ queued: 100_000, dropped: 1 });
+    });
+
+    it("redacts an object logged as the message, as the console capture does", async () => {
+      const transport = createFakeTransport();
+      const logger = makeLogger(transport);
+
+      logger.capture({
+        level: "error",
+        logger: "console",
+        message: { password: "hunter2", user: "ada" },
+      });
+      await logger.flush();
+
+      const [event] = transport.events;
+      expect(event?.message).toContain("[redacted]");
+      expect(event?.message).not.toContain("hunter2");
+      expect(event?.logger).toBe("console");
     });
 
     it("goes inert after close", async () => {

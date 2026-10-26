@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { digestsMatch, sha256Hex } from "@/lib/crypto/digest";
 import { prisma } from "@/lib/db";
 
@@ -92,6 +94,33 @@ const DENY_INVALID = { ok: false, reason: "invalid" } as const;
  */
 export function hashApiToken(rawToken: string): string {
   return sha256Hex(rawToken);
+}
+
+/**
+ * Prefix on every minted token. Lets a leaked value be recognised — by a
+ * secret scanner or a person — as a Stuffs Logger API token. Part of the
+ * credential: the digest is over the whole string, prefix included.
+ */
+const API_TOKEN_PREFIX = "slg_api_";
+
+/** Bytes of randomness behind each token: 256 bits. */
+const API_TOKEN_RANDOM_BYTES = 32;
+
+/**
+ * Mints a new API token: the raw value to show once, and the digest to store.
+ *
+ * Lives beside {@link hashApiToken} so minting and verifying share one hash
+ * by construction. The raw value must be returned to the operator and then
+ * dropped — never persisted, never logged.
+ *
+ * @returns The raw token and its `api_tokens.tokenHash` digest.
+ * @example
+ * const { raw, tokenHash } = generateApiToken();
+ */
+export function generateApiToken(): { raw: string; tokenHash: string } {
+  const raw = `${API_TOKEN_PREFIX}${randomBytes(API_TOKEN_RANDOM_BYTES).toString("base64url")}`;
+
+  return { raw, tokenHash: hashApiToken(raw) };
 }
 
 /**

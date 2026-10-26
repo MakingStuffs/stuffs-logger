@@ -4,8 +4,11 @@ import { ApiError } from "@/lib/api/errors";
 import type { AppSession, AppUser } from "@/lib/auth/types";
 import { prisma } from "@/lib/db";
 
+import { DAILY_BYTE_QUOTA, DAILY_EVENT_QUOTA } from "@/lib/ingest/quota";
+
 import {
   getApplicationBySlug,
+  getApplicationUsageToday,
   listApplications,
   listIngestKeys,
 } from "./queries";
@@ -25,6 +28,7 @@ vi.mock("@/lib/db", () => ({
   prisma: {
     application: { findMany: vi.fn(), findUnique: vi.fn() },
     ingestKey: { findMany: vi.fn() },
+    applicationUsage: { findUnique: vi.fn() },
   },
 }));
 
@@ -70,6 +74,10 @@ const ACTIVE_READS = [
     "getApplicationBySlug",
     (session: AppSession) => getApplicationBySlug(session, "checkout"),
   ],
+  [
+    "getApplicationUsageToday",
+    (session: AppSession) => getApplicationUsageToday(session, "app-1"),
+  ],
 ] as const;
 
 /** Reads that expose write credentials, and so require an administrator. */
@@ -82,6 +90,7 @@ function prismaCallCount(): number {
     vi.mocked(prisma.application.findMany),
     vi.mocked(prisma.application.findUnique),
     vi.mocked(prisma.ingestKey.findMany),
+    vi.mocked(prisma.applicationUsage.findUnique),
   ].reduce((total, mock) => total + mock.mock.calls.length, 0);
 }
 
@@ -91,6 +100,7 @@ beforeEach(() => {
   vi.mocked(prisma.application.findMany).mockResolvedValue([]);
   vi.mocked(prisma.application.findUnique).mockResolvedValue(null);
   vi.mocked(prisma.ingestKey.findMany).mockResolvedValue([]);
+  vi.mocked(prisma.applicationUsage.findUnique).mockResolvedValue(null);
 });
 
 describe.each(ACTIVE_READS)("%s", (_name, read) => {
@@ -186,5 +196,56 @@ describe("getApplicationBySlug", () => {
 
     expect(result).toBeNull();
     expect(prismaCallCount()).toBe(0);
+  });
+});
+
+describe("getApplicationUsageToday", () => {
+  const LATE_EVENING = new Date("2026-10-22T23:45:00.000Z");
+
+  it("reads the row for the current UTC day", async () => {
+    await getApplicationUsageToday(MEMBER_SESSION, "app-1", LATE_EVENING);
+
+    expect(prisma.applicationUsage.findUnique).toHaveBeenCalledWith({
+      where: {
+        applicationId_day: {
+          applicationId: "app-1",
+          day: new Date("2026-10-22T00:00:00.000Z"),
+        },
+      },
+      select: { eventCount: true, byteCount: true },
+    });
+  });
+
+  it("reports a day with no row yet as zero, against the ingest ceilings", async () => {
+    const usage = await getApplicationUsageToday(
+      MEMBER_SESSION,
+      "app-1",
+      LATE_EVENING,
+    );
+
+    expect(usage).toEqual({
+      day: "2026-10-22",
+      eventCount: 0,
+      byteCount: 0,
+      eventQuota: DAILY_EVENT_QUOTA,
+      byteQuota: DAILY_BYTE_QUOTA,
+    });
+  });
+
+  it("converts the BigInt byte counter to a plain number", async () => {
+    vi.mocked(prisma.applicationUsage.findUnique).mockResolvedValue({
+      eventCount: 1_200,
+      byteCount: BigInt(52_428_800),
+    } as never);
+
+    const usage = await getApplicationUsageToday(
+      MEMBER_SESSION,
+      "app-1",
+      LATE_EVENING,
+    );
+
+    expect(usage.eventCount).toBe(1_200);
+    expect(usage.byteCount).toBe(52_428_800);
+    expect(typeof usage.byteCount).toBe("number");
   });
 });

@@ -2,8 +2,8 @@ import type { Prisma } from "@prisma/client";
 
 import { auth } from "@/lib/auth/auth";
 import { prisma } from "@/lib/db";
+import { credentialAccountFor } from "@/lib/users/credential-account";
 
-import { credentialAccountFor } from "./credential-account";
 import type { SeedUser, SeedUserRole } from "./fixtures";
 import type { SeedIngestKeyRow, SeedStore } from "./seed";
 

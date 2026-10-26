@@ -1,9 +1,27 @@
-import { INGEST_KEY_HEADER, MAX_BODY_BYTES } from "@stuffs-logger/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  EMPTY_MESSAGE_PLACEHOLDER,
+  INGEST_KEY_HEADER,
+  MAX_BODY_BYTES,
+} from "@stuffs-logger/core";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
 
+import {
+  INVALID_KEY_MAX_REFUSALS,
+  INVALID_KEY_WINDOW_MS,
+  resetInvalidKeyThrottle,
+} from "@/lib/ingest/invalid-key-throttle";
+import { hashIngestSecret } from "@/lib/ingest/keys";
 import { resetOriginRegistrySnapshot } from "@/lib/ingest/origin-registry";
 import { DAILY_EVENT_QUOTA } from "@/lib/ingest/quota";
 import { resetRateLimits } from "@/lib/ingest/rate-limit";
+import { resetSecretKeyExposureWarnings } from "@/lib/ingest/secret-key-exposure";
 import {
   insertLogEvents,
   listRegisteredOrigins,
@@ -33,9 +51,14 @@ vi.mock("@/lib/ingest/store", () => ({
   stampKeyLastUsed: vi.fn(),
 }));
 
+const INGEST_URL = "https://logger.example.test/api/v1/ingest";
 const ORIGIN = "https://app.example.test";
 const PUBLIC_KEY = `slg_pub_${"p".repeat(32)}`;
+const SECRET_KEY_ID = "lookuphandle1234";
+const SECRET_SEGMENT = "s".repeat(32);
+const SECRET_KEY = `slg_sec_${SECRET_KEY_ID}_${SECRET_SEGMENT}`;
 const APPLICATION_ID = "app-1";
+const CLIENT_IP = "203.0.113.9";
 
 function publicKeyRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -51,6 +74,19 @@ function publicKeyRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function secretKeyRow() {
+  return {
+    id: "key-2",
+    applicationId: APPLICATION_ID,
+    type: "SECRET" as const,
+    publicKey: null,
+    keyId: SECRET_KEY_ID,
+    secretHash: hashIngestSecret(SECRET_SEGMENT),
+    allowedOrigins: [],
+    revokedAt: null,
+  };
+}
+
 function batch(overrides: Record<string, unknown> = {}) {
   return {
     sdk: { name: "@stuffs-logger/sdk", version: "0.1.0" },
@@ -63,25 +99,60 @@ function batch(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** The headers every request carries unless a test overrides or removes one. */
+const DEFAULT_HEADERS: Record<string, string> = {
+  "content-type": "application/json",
+  origin: ORIGIN,
+  [INGEST_KEY_HEADER]: PUBLIC_KEY,
+};
+
+/** Merges overrides into the defaults; a `null` override REMOVES the header. */
+function requestHeaders(
+  overrides: Record<string, string | null>,
+): Record<string, string> {
+  const merged: Record<string, string | null> = {
+    ...DEFAULT_HEADERS,
+    ...overrides,
+  };
+
+  return Object.fromEntries(
+    Object.entries(merged).filter(
+      (entry): entry is [string, string] => entry[1] !== null,
+    ),
+  );
+}
+
 function makeRequest(
   body: unknown,
-  headers: Record<string, string> = {},
+  headers: Record<string, string | null> = {},
 ): Request {
-  return new Request("https://logger.example.test/api/v1/ingest", {
+  return new Request(INGEST_URL, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      origin: ORIGIN,
-      [INGEST_KEY_HEADER]: PUBLIC_KEY,
-      ...headers,
-    },
+    headers: requestHeaders(headers),
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
+}
+
+/** A request whose body arrives as a stream, with no `content-length`. */
+function makeStreamRequest(body: ReadableStream<Uint8Array>): Request {
+  // Node's fetch requires `duplex: "half"` for a streaming request body, and
+  // the DOM lib's `RequestInit` does not declare it, so the init is typed on
+  // its own rather than written inline where the extra key would be refused.
+  const init: RequestInit & { duplex: "half" } = {
+    method: "POST",
+    headers: requestHeaders({}),
+    body,
+    duplex: "half",
+  };
+
+  return new Request(INGEST_URL, init);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimits();
+  resetInvalidKeyThrottle();
+  resetSecretKeyExposureWarnings();
   resetOriginRegistrySnapshot();
 
   vi.mocked(prismaIngestKeyStore.findPublicKey).mockResolvedValue(
@@ -190,6 +261,84 @@ describe("POST /api/v1/ingest", () => {
     expect((await POST(makeRequest(padded))).status).toBe(413);
   });
 
+  it("cancels a chunked body the moment it passes the limit, rather than draining it", async () => {
+    const CHUNK_BYTES = 65_536;
+    // Enough to prove a drain (4 MiB) and bounded so a regression cannot run
+    // away; the pass condition is far below it.
+    const MAX_PULLS = 64;
+    let pulls = 0;
+    let cancelled = false;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > MAX_PULLS) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(new Uint8Array(CHUNK_BYTES).fill(0x20));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    const response = await POST(makeStreamRequest(endless));
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "PAYLOAD_TOO_LARGE" },
+    });
+    expect(cancelled).toBe(true);
+    // One pull per chunk read before the limit tripped, plus the stream's own
+    // one-chunk read-ahead. Draining would have taken all MAX_PULLS.
+    expect(pulls).toBeLessThanOrEqual(
+      Math.ceil(MAX_BODY_BYTES / CHUNK_BYTES) + 2,
+    );
+  });
+
+  it("accepts a chunked body under the limit, decoded across chunk boundaries", async () => {
+    // A multi-byte character split across two chunks must decode as itself.
+    const bytes = new TextEncoder().encode(
+      JSON.stringify(
+        batch({
+          events: [
+            {
+              ts: Date.now(),
+              level: "info",
+              message: "héllo",
+              logger: "manual",
+            },
+          ],
+        }),
+      ),
+    );
+    const splitAt = bytes.indexOf(0xc3) + 1;
+    const chunked = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, splitAt));
+        controller.enqueue(bytes.slice(splitAt));
+        controller.close();
+      },
+    });
+
+    const response = await POST(makeStreamRequest(chunked));
+
+    expect(response.status).toBe(202);
+    const rows = vi.mocked(insertLogEvents).mock.calls[0]?.[0];
+    expect(rows?.[0]?.message).toBe("héllo");
+  });
+
+  it("refuses a request with no body at all with 400", async () => {
+    const response = await POST(
+      new Request(INGEST_URL, { method: "POST", headers: requestHeaders({}) }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "INVALID_INPUT" },
+    });
+  });
+
   it("refuses a body that is not JSON with 400", async () => {
     const response = await POST(makeRequest("{not json"));
 
@@ -276,6 +425,218 @@ describe("POST /api/v1/ingest", () => {
     await expect(response.json()).resolves.toMatchObject({
       data: { accepted: 1, rejected: 1 },
     });
+  });
+
+  it("sanitises the envelope labels and an all-control message before writing", async () => {
+    const NUL = String.fromCodePoint(0x00);
+    const RIGHT_TO_LEFT_OVERRIDE = String.fromCodePoint(0x202e);
+
+    await POST(
+      makeRequest(
+        batch({
+          environment: `prod${RIGHT_TO_LEFT_OVERRIDE}uction`,
+          events: [
+            { ts: Date.now(), level: "info", message: NUL, logger: "manual" },
+          ],
+        }),
+      ),
+    );
+
+    const rows = vi.mocked(insertLogEvents).mock.calls[0]?.[0];
+    expect(rows?.[0]).toMatchObject({
+      environment: "production",
+      message: EMPTY_MESSAGE_PLACEHOLDER,
+    });
+  });
+
+  describe("invalid-key throttle", () => {
+    /** Sends `count` requests with an unknown key from `clientIp`. */
+    async function spray(
+      count: number,
+      clientIp: string | null,
+    ): Promise<void> {
+      for (let attempt = 0; attempt < count; attempt += 1) {
+        await POST(makeRequest(batch(), { "x-forwarded-for": clientIp }));
+      }
+    }
+
+    beforeEach(() => {
+      vi.mocked(prismaIngestKeyStore.findPublicKey).mockResolvedValue(null);
+    });
+
+    it("stops looking up keys for an address once its allowance is spent", async () => {
+      await spray(INVALID_KEY_MAX_REFUSALS, CLIENT_IP);
+      expect(prismaIngestKeyStore.findPublicKey).toHaveBeenCalledTimes(
+        INVALID_KEY_MAX_REFUSALS,
+      );
+
+      const response = await POST(
+        makeRequest(batch(), { "x-forwarded-for": CLIENT_IP }),
+      );
+
+      expect(response.status).toBe(429);
+      expect(prismaIngestKeyStore.findPublicKey).toHaveBeenCalledTimes(
+        INVALID_KEY_MAX_REFUSALS,
+      );
+      await expect(response.json()).resolves.toMatchObject({
+        error: {
+          code: "RATE_LIMITED",
+          details: { retryAfterSeconds: expect.any(Number) },
+        },
+      });
+    });
+
+    it("grants nothing to a throttled address — Vary: Origin only", async () => {
+      await spray(INVALID_KEY_MAX_REFUSALS, CLIENT_IP);
+
+      const response = await POST(
+        makeRequest(batch(), { "x-forwarded-for": CLIENT_IP }),
+      );
+
+      expect(response.headers.get("vary")).toBe("Origin");
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    });
+
+    it("refuses even a valid key from a throttled address, until the window passes", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(new Date("2026-09-01T12:00:00.000Z"));
+        await spray(INVALID_KEY_MAX_REFUSALS, CLIENT_IP);
+        vi.mocked(prismaIngestKeyStore.findPublicKey).mockResolvedValue(
+          publicKeyRow(),
+        );
+
+        const during = await POST(
+          makeRequest(batch(), { "x-forwarded-for": CLIENT_IP }),
+        );
+        expect(during.status).toBe(429);
+
+        vi.setSystemTime(
+          new Date("2026-09-01T12:00:00.000Z").getTime() +
+            INVALID_KEY_WINDOW_MS,
+        );
+        const after = await POST(
+          makeRequest(batch(), { "x-forwarded-for": CLIENT_IP }),
+        );
+        expect(after.status).toBe(202);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("throttles each address separately", async () => {
+      await spray(INVALID_KEY_MAX_REFUSALS, CLIENT_IP);
+      vi.mocked(prismaIngestKeyStore.findPublicKey).mockResolvedValue(
+        publicKeyRow(),
+      );
+
+      const response = await POST(
+        makeRequest(batch(), { "x-forwarded-for": "198.51.100.4" }),
+      );
+
+      expect(response.status).toBe(202);
+    });
+
+    it("never throttles a request that carries no client address", async () => {
+      await spray(INVALID_KEY_MAX_REFUSALS + 5, null);
+
+      const response = await POST(
+        makeRequest(batch(), { "x-forwarded-for": null }),
+      );
+
+      expect(response.status).toBe(401);
+      expect(prismaIngestKeyStore.findPublicKey).toHaveBeenCalledTimes(
+        INVALID_KEY_MAX_REFUSALS + 6,
+      );
+    });
+
+    it("does not count origin refusals, which need a live key", async () => {
+      vi.mocked(prismaIngestKeyStore.findPublicKey).mockResolvedValue(
+        publicKeyRow(),
+      );
+      for (let attempt = 0; attempt < INVALID_KEY_MAX_REFUSALS; attempt += 1) {
+        const refused = await POST(
+          makeRequest(batch(), {
+            "x-forwarded-for": CLIENT_IP,
+            origin: "https://evil.example.test",
+          }),
+        );
+        expect(refused.status).toBe(403);
+      }
+
+      const response = await POST(
+        makeRequest(batch(), { "x-forwarded-for": CLIENT_IP }),
+      );
+
+      expect(response.status).toBe(202);
+    });
+  });
+
+  describe("secret key exposure", () => {
+    beforeEach(() => {
+      vi.mocked(prismaIngestKeyStore.findSecretKeyByKeyId).mockResolvedValue(
+        secretKeyRow(),
+      );
+    });
+
+    function exposureWarnings(
+      warn: MockInstance<typeof console.warn>,
+    ): string[] {
+      return warn.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) =>
+          line.includes("secret key key-2 presented from a browser"),
+        );
+    }
+
+    it("accepts a secret key from a browser but warns, once per minute", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+
+      const first = await POST(
+        makeRequest(batch(), { [INGEST_KEY_HEADER]: SECRET_KEY }),
+      );
+      const second = await POST(
+        makeRequest(batch(), { [INGEST_KEY_HEADER]: SECRET_KEY }),
+      );
+
+      expect(first.status).toBe(202);
+      expect(second.status).toBe(202);
+      expect(exposureWarnings(warn)).toHaveLength(1);
+      expect(exposureWarnings(warn)[0]).toContain(JSON.stringify(ORIGIN));
+    });
+
+    it("does not warn about a secret key used from a server process", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+
+      const response = await POST(
+        makeRequest(batch({ source: "node" }), {
+          [INGEST_KEY_HEADER]: SECRET_KEY,
+          origin: null,
+        }),
+      );
+
+      expect(response.status).toBe(202);
+      expect(exposureWarnings(warn)).toHaveLength(0);
+    });
+  });
+
+  it("quotes and caps a hostile Origin in the refusal log line", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const hostile = `https://evil.example.test/"; forged="${"x".repeat(2000)}`;
+
+    const response = await POST(makeRequest(batch(), { origin: hostile }));
+
+    expect(response.status).toBe(403);
+    const line = warn.mock.calls
+      .map((call) => String(call[0]))
+      .find((entry) => entry.includes("not on key allowlist"));
+    expect(line).toBeDefined();
+    expect(line).toContain('origin "https://evil.example.test/\\"; forged=');
+    expect(line?.length).toBeLessThan(400);
   });
 });
 

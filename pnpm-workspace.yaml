@@ -2,10 +2,76 @@ packages:
   - "packages/*"
   - "apps/*"
 
+# THE INSTALL-SCRIPT ALLOWLIST. pnpm runs no dependency's `preinstall`,
+# `install` or `postinstall` unless the package is named here, so every entry
+# hands that package arbitrary code execution on every developer machine and
+# every CI runner. Add one only when the install genuinely fails without it,
+# and say why.
+#
+# `sharp` is deliberately DENIED: it is an optional dependency of `next` and
+# ships prebuilt binaries as platform-specific optional dependencies
+# (`@img/sharp-*`), so since 0.33 it has had no install script. pnpm still
+# flags it because the package carries a `binding.gyp`, and allowing it would
+# mean a `node-gyp rebuild` from source on every machine for a binary that is
+# already there. `false` records the decision so pnpm stops asking.
+#
+# EDITING THIS FILE CHANGES pnpm's RECORDED WORKSPACE STATE. pnpm 11 writes
+# `allowBuilds` and the release-age keys below into
+# `node_modules/.pnpm-workspace-state-v1.json`, and its default
+# `verifyDepsBeforeRun: install` reinstalls before the next `pnpm <script>`
+# when the file and the record disagree. Run `pnpm install` after editing it
+# rather than being surprised mid-script.
 allowBuilds:
   "@prisma/client": true
   "@prisma/engines": true
   prisma: true
-  sharp: true
   unrs-resolver: true
   esbuild: true
+  sharp: false
+
+# A COOLING-OFF PERIOD FOR NEWLY PUBLISHED VERSIONS, in minutes (1440 = 24h).
+# Most registry compromises are noticed and unpublished within hours, so a
+# version younger than a day is refused at resolution time — `pnpm add`,
+# `pnpm update`, a Dependabot bump — and a dependency change cannot pull in a
+# malicious version in the window before anyone has looked at it.
+#
+# 1440 is also pnpm 11's default, but WRITING IT DOWN IS NOT A NO-OP: an
+# explicit `minimumReleaseAge` switches pnpm into its STRICT handling
+# (`minimumReleaseAgeStrict`), which is the behaviour this repository wants.
+# Left at the implicit default, pnpm quietly resolves an older version that
+# satisfies the range and ignores any immature version it finds in the
+# lockfile. Strict means:
+#
+#   - `pnpm add`/`update` of a version under a day old asks for approval
+#     locally (recording it in `minimumReleaseAgeExclude`) and fails in CI.
+#   - Every `pnpm install` re-checks each lockfile entry's publish time
+#     against the registry ("Verifying lockfile against supply-chain
+#     policies"), so a hand-edited lockfile naming an immature version fails
+#     the CI install. That re-check needs the network: an OFFLINE install
+#     fails unless pnpm has a cached verdict for this lockfile and policy, or
+#     `--trust-lockfile` is passed to skip it. CI does not pass it.
+#
+# The repository's own packages are excluded so a workspace package can
+# depend on a sibling the moment it is released: the SDK pins the core at the
+# exact lockstep version semantic-release just published.
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - "@stuffs-logger/*"
+
+# VERSION OVERRIDES for transitive dependencies with published advisories
+# whose dependents pin a range that excludes the fix. Each entry names the
+# advisory class and the dependent that pins it; remove an entry once that
+# dependent's own range includes the patched version.
+overrides:
+  # @prisma/config pins 7.1.5 exactly; <8 has an unbounded-recursion DoS when
+  # merging recursive graphs. Build-time only (prisma CLI), kept patched anyway.
+  deepmerge-ts: ">=8.0.0"
+  # tsup pins ^0.27; 0.27.x reads arbitrary files from the dev server on
+  # Windows. vite already accepts ^0.28.
+  esbuild: ">=0.28.1"
+  # vitest/@vitejs/plugin-react accept ^8 but resolution stuck on 8.2.2, which
+  # carries the launch-editor command-execution and server.fs bypass fixes.
+  vite: ">=8.2.4"
+  # postcss/css-tree pin ^1.2.1; 1.2.1 has an event-loop DoS via indexed
+  # source-map section offsets.
+  source-map-js: ">=1.2.2"

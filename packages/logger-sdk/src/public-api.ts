@@ -16,10 +16,7 @@ export { captureConsole, DEFAULT_CONSOLE_LEVELS } from "./capture/console";
 export type { ConsoleCaptureOptions, RestoreConsole } from "./capture/console";
 
 export { captureErrors } from "./capture/errors";
-export type {
-  ErrorCaptureOptions,
-  RestoreErrorHandlers,
-} from "./capture/errors";
+export type { RestoreErrorHandlers } from "./capture/errors";
 
 export type { ConsoleMethod } from "./logger/original-console";
 

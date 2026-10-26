@@ -31,6 +31,20 @@ describe("createFlushTimer", () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
+  it("brings a pending flush forward when a sooner one is asked for", () => {
+    const run = vi.fn();
+    const timer = createFlushTimer(run);
+
+    timer.arm(60_000);
+    timer.arm(1000);
+    vi.advanceTimersByTime(1000);
+
+    expect(run).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(60_000);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it("can be armed again once it has fired", () => {
     const run = vi.fn();
     const timer = createFlushTimer(run);
