@@ -1,3 +1,5 @@
+import { resolveClientIp } from "@/lib/net/client-ip";
+
 /**
  * Pre-authentication throttling for the ingest endpoint, keyed on client
  * address and counting ONLY refused keys.
@@ -39,13 +41,6 @@ export const INVALID_KEY_WINDOW_MS = 60_000;
  */
 export const INVALID_KEY_MAX_TRACKED_CLIENTS = 10_000;
 
-/**
- * Longest header value accepted as a client address. An IPv6 address with a
- * port and brackets is under 60 characters; anything longer is not an address
- * and is treated as absent rather than pooled.
- */
-const MAX_CLIENT_IP_LENGTH = 64;
-
 interface WindowState {
   /** When the current window started. */
   startedAt: number;
@@ -73,35 +68,20 @@ function evictIfNeeded(now: number): void {
   }
 }
 
-/** A header value as a client address, or `null` when it cannot be one. */
-function asClientIp(value: string | null): string | null {
-  if (value === null) return null;
-
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_CLIENT_IP_LENGTH)
-    return null;
-  return trimmed;
-}
-
 /**
- * The client address a reverse proxy recorded for a request.
+ * The client address a TRUSTED proxy recorded for a request.
  *
- * The first `x-forwarded-for` entry, then `x-real-ip`, then nothing. Both
- * headers are the proxy's to set; a request that reaches the process without
- * one has no address this module will trust, and is not throttled.
+ * Delegates to `lib/net/client-ip`, which reads `x-forwarded-for` only as far
+ * as `TRUSTED_PROXY_HOPS` vouches for it. With no trusted proxy it answers
+ * `null` and this throttle stands down: an address the caller chose is worse
+ * than none, because it would let a stranger throttle a real application by
+ * sending bad keys "from" that application's server.
  *
  * @param headers - The request headers.
- * @returns The address, or `null` when none is present.
- * @example
- * clientIpFromHeaders(new Headers({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" }));
- * // "203.0.113.9"
+ * @returns The address, or `null` when no trusted proxy recorded one.
  */
 export function clientIpFromHeaders(headers: Headers): string | null {
-  const forwarded = headers.get("x-forwarded-for");
-  const firstHop =
-    forwarded === null ? null : (forwarded.split(",")[0] ?? null);
-
-  return asClientIp(firstHop) ?? asClientIp(headers.get("x-real-ip"));
+  return resolveClientIp(headers);
 }
 
 /** The outcome of consulting the throttle. */

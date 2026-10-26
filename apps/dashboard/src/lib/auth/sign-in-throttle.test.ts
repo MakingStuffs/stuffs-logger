@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   clearSignInAttempts,
@@ -218,53 +218,47 @@ describe("clearSignInAttempts", () => {
 });
 
 describe("resolveClientIp", () => {
-  it("takes the leftmost entry of x-forwarded-for, trimmed", () => {
-    const headers = new Headers({
-      "x-forwarded-for": " 198.51.100.7 , 10.0.0.1, 10.0.0.2",
-    });
-
-    expect(resolveClientIp(headers)).toBe("198.51.100.7");
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
-  it("falls back to x-real-ip", () => {
-    const headers = new Headers({ "x-real-ip": "198.51.100.7" });
+  it("knows no address with no trusted proxy, so attempts key on the account alone", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", undefined);
+    vi.stubEnv("VERCEL", undefined);
 
-    expect(resolveClientIp(headers)).toBe("198.51.100.7");
-  });
-
-  it("prefers x-forwarded-for when both are present", () => {
-    const headers = new Headers({
-      "x-forwarded-for": "198.51.100.7",
-      "x-real-ip": "203.0.113.9",
-    });
-
-    expect(resolveClientIp(headers)).toBe("198.51.100.7");
-  });
-
-  it("reports no address when neither header names one", () => {
-    expect(resolveClientIp(new Headers())).toBeNull();
     expect(
-      resolveClientIp(new Headers({ "x-forwarded-for": " , " })),
+      resolveClientIp(new Headers({ "x-forwarded-for": "198.51.100.7" })),
     ).toBeNull();
   });
 
-  it("lower-cases an IPv6 literal so hex case cannot multiply the allowance", () => {
-    const headers = new Headers({ "x-forwarded-for": "2001:DB8::1" });
+  it("takes the entry the trusted proxy appended, never the client's forged first one", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "1");
 
-    expect(resolveClientIp(headers)).toBe("2001:db8::1");
+    expect(
+      resolveClientIp(
+        new Headers({ "x-forwarded-for": "6.6.6.6, 198.51.100.7" }),
+      ),
+    ).toBe("198.51.100.7");
   });
 
-  it("refuses to key on a value no address could be", () => {
-    // A header is attacker-controlled on a deployment with no proxy in front;
-    // a kilobyte of it must not become a kilobyte of map key.
-    const headers = new Headers({
-      "x-forwarded-for": "a".repeat(1_000),
-      "x-real-ip": "198.51.100.7",
-    });
+  it("cannot be handed fresh windows by inventing addresses", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", undefined);
+    vi.stubEnv("VERCEL", undefined);
 
-    expect(resolveClientIp(headers)).toBe("198.51.100.7");
+    // With no trusted proxy every invented address resolves to "unknown", so
+    // all of them draw on the one strict window for the account.
+    for (let attempt = 0; attempt < SIGN_IN_MAX_ATTEMPTS; attempt += 1) {
+      const forged = new Headers({ "x-forwarded-for": `203.0.113.${attempt}` });
+      expect(
+        consumeSignInAttempt("victim@example.test", resolveClientIp(forged))
+          .allowed,
+      ).toBe(true);
+    }
+
+    const next = new Headers({ "x-forwarded-for": "203.0.113.250" });
     expect(
-      resolveClientIp(new Headers({ "x-forwarded-for": "a".repeat(1_000) })),
-    ).toBeNull();
+      consumeSignInAttempt("victim@example.test", resolveClientIp(next))
+        .allowed,
+    ).toBe(false);
   });
 });

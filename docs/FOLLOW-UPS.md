@@ -78,14 +78,16 @@ The sign-in throttle matters most. The Server Action calls `auth.api.signInEmail
 directly, which bypasses Better Auth's router-level rate limiting; the converse hole
 (the router's own `/api/auth/sign-in/email` bypassing this throttle) is closed by
 `disabledPaths` in `src/lib/auth/auth.ts`. The tight window (10 per 15 minutes) is
-keyed on `client address | account`, so locking a colleague out now requires their
-address from their network position, or a proxy that forwards a caller-chosen
-`x-forwarded-for`. The price is a looser per-account ceiling: 50 attempts that pass the
+keyed on `client address | account`, so locking a colleague out now requires sharing
+their network address. The price is a looser per-account ceiling: 50 attempts that pass the
 per-address gate (at least five distinct addresses) still lock the account from
 everywhere for the window, and a successful sign-in by the owner resets both windows. A
 durable shared store would also allow keying on verified rather than header-claimed
-addresses. The reverse proxy MUST set and overwrite `x-forwarded-for`
-(`DEPLOYMENT.md`); the ingest invalid-key throttle reads the same header.
+addresses. Addresses come only from `X-Forwarded-For` entries a trusted proxy appended
+(`TRUSTED_PROXY_HOPS`, `src/lib/net/client-ip.ts`); with no trusted proxy every attempt is
+keyed on the account alone, and the ingest invalid-key throttle stands down. A shared
+address (NAT, office egress) still shares one ingest throttle window, so 60 bad keys from
+one machine behind it can delay a real application's logging there for up to a minute.
 
 ## 7. Smaller items
 

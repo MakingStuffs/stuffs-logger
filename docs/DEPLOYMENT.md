@@ -39,6 +39,7 @@ happens if you get it wrong:
 | `GOOGLE_CLIENT_ID`     | No                   | Google sign-in. Set **both** or neither: the provider is registered only when the pair is complete, and the sign-in page only offers the button when it is.                                                                                                                                                                                                                                                                                                                                        |
 | `GOOGLE_CLIENT_SECRET` | No                   | As above. The redirect URI to register with Google is `${BETTER_AUTH_URL}/api/auth/callback/google`.                                                                                                                                                                                                                                                                                                                                                                                               |
 | `CRON_SECRET`          | If you run retention | The raw API token whose SHA-256 digest is a live row in `api_tokens`. Sent as `Authorization: Bearer <value>` to `/api/cron/retention`.                                                                                                                                                                                                                                                                                                                                                            |
+| `TRUSTED_PROXY_HOPS`   | Behind a proxy       | How many reverse proxies in front of the app append to `X-Forwarded-For` and may be trusted — usually `1`. The sign-in and ingest throttles read the client address from that many entries from the RIGHT, never the client-supplied first entry. Unset means no proxy is trusted: the ingest invalid-key throttle stands down and sign-in throttling keys on the account alone. Defaults to `1` on Vercel.                                                                                        |
 
 ### Database connection pooling
 
@@ -249,27 +250,21 @@ Notes for a self-managed host:
   ingest endpoint, which is a cross-origin API and sets its own CORS headers
   per key. The smoke suite asserts on these, so a reverse proxy that drops them
   will be caught.
-- **The reverse proxy must set `x-forwarded-for`** (or `x-real-ip`) to the
-  client's address, and must _overwrite_ any value the client sent rather than
-  append to it. The sign-in throttle keys its tight window on
-  `client address | account` (`src/lib/auth/sign-in-throttle.ts`), so a proxy
-  that forwards a caller-chosen header lets a guesser pick their own window,
-  and a proxy that sets none collapses every caller into one. With no proxy at
-  all, `next start` fills the header from the socket itself. Better Auth's own
-  per-route limiter reads the same header and, with nothing configured,
-  trusts a single-value `x-forwarded-for` as-is; if your proxy sends a
-  multi-hop chain or a different header, set `advanced.ipAddress.trustedProxies`
-  (the proxy CIDRs to strip from the right) or
-  `advanced.ipAddress.ipAddressHeaders` in `src/lib/auth/auth.ts` so it keys
-  on the real client. The ingest endpoint reads the same header for its
-  invalid-key throttle: 60 refused keys per client address per minute, after
-  which that address gets a `429` before the key is even looked up
-  (`src/lib/ingest/invalid-key-throttle.ts`). A proxy that appends rather than
-  overwrites leaves the first entry under the caller's control, which lets them
-  dodge the throttle or pin it on someone else's address; a request with neither
-  header is never throttled. Like the other in-memory limiters this is per
-  instance and resets on restart, so a WAF or edge rate limit on
-  `/api/v1/ingest` is still recommended as the durable line.
+- **Tell the app how many proxies to trust.** Set `TRUSTED_PROXY_HOPS` to
+  the number of reverse proxies in front of it — `1` for a single Caddy or
+  nginx. Each proxy appends the address it received the connection from to
+  `X-Forwarded-For`, so only the right-hand entries are written by your own
+  infrastructure; the first entry is whatever the client sent. The sign-in
+  throttle and the ingest invalid-key throttle (60 refused keys per address
+  per minute, then `429` before any key lookup) read the client from that
+  many entries from the right (`src/lib/net/client-ip.ts`). With the variable
+  unset nothing is trusted: the ingest throttle stands down rather than key on
+  an address a caller chose, and sign-in throttling keys on the account alone
+  at its strict ceiling. Do not set it when the app is exposed directly with
+  no proxy — Next passes a client-supplied header through untouched. Like the
+  other in-memory limiters these are per instance and reset on restart, so a
+  WAF or edge rate limit on `/api/v1/ingest` is still recommended as the
+  durable line.
 - **Run the retention sweep** on a schedule, as an authenticated request to
   `/api/cron/retention` carrying `Authorization: Bearer $CRON_SECRET`, where
   `CRON_SECRET` is a token minted on **API tokens** (`/tokens`). A missing or

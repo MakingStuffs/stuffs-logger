@@ -47,6 +47,8 @@
  * quarter of an hour are not a lockout.
  */
 
+import { resolveClientIp as resolveTrustedClientIp } from "@/lib/net/client-ip";
+
 /** Attempts permitted per client address per account per window. */
 export const SIGN_IN_MAX_ATTEMPTS = 10;
 
@@ -65,19 +67,6 @@ export const SIGN_IN_WINDOW_MS = 15 * 60 * 1000;
  * map without bound on an instance that is never recycled.
  */
 const MAX_TRACKED_WINDOWS = 10_000;
-
-/**
- * The longest client address the throttle will key on. An IPv6 literal is 45
- * characters; anything longer is not an address, and a header is
- * attacker-chosen on a deployment with no proxy in front.
- */
-const MAX_CLIENT_IP_LENGTH = 64;
-
-/**
- * Request headers a proxy sets to name the client, in the order consulted.
- * Next fills the first from the socket when nothing upstream has.
- */
-const CLIENT_IP_HEADERS = ["x-forwarded-for", "x-real-ip"] as const;
 
 interface WindowState {
   /** When the current window started. */
@@ -167,30 +156,25 @@ function countAttempt(
 }
 
 /**
- * The client address a request arrived from, as far as its headers say.
+ * The client address a request arrived from, as far as a TRUSTED proxy says.
  *
- * `x-forwarded-for` is a comma-separated chain whose LEFTMOST entry is the
- * client as the first proxy saw it. Behind a proxy that sets the header that
- * is the right value; with no proxy at all Next fills it from the socket
- * (`next/dist/server/base-server.js`), so a plain `next start` still has one.
- * `x-real-ip` is the single-value form some proxies send instead. A value
- * that is not plausibly an address — empty, or longer than any IP literal —
- * is skipped rather than keyed on, so a hostile header cannot grow the map's
- * entries in size the way the cap stops it growing them in number.
+ * Delegates to `lib/net/client-ip`: only the `x-forwarded-for` entries that
+ * `TRUSTED_PROXY_HOPS` vouches for count, because the leftmost entry is
+ * whatever the client sent. With no trusted proxy this is `null`, and
+ * {@link consumeSignInAttempt} keys the attempt on the account alone at the
+ * strict ceiling — a caller cannot buy fresh windows by inventing addresses.
  *
  * @param headers - The request's headers. Attacker-influenced.
- * @returns The address, lower-cased, or `null` when nothing names one.
+ * @returns The address, lower-cased, or `null` when no trusted proxy names one.
  * @example
- * resolveClientIp(await headers()); // "198.51.100.7"
+ * resolveClientIp(await headers()); // "198.51.100.7" behind one trusted proxy
  */
 export function resolveClientIp(headers: ClientIpSource): string | null {
-  for (const name of CLIENT_IP_HEADERS) {
-    const first = headers.get(name)?.split(",")[0]?.trim().toLowerCase() ?? "";
-
-    if (first.length > 0 && first.length <= MAX_CLIENT_IP_LENGTH) return first;
-  }
-
-  return null;
+  // One resolver for every per-address control: the leftmost forwarded entry
+  // is whatever the client sent, so only proxy-vouched entries count, and
+  // with no trusted proxy there is no address — the attempt is keyed on the
+  // account alone, at the strict ceiling.
+  return resolveTrustedClientIp(headers);
 }
 
 /**

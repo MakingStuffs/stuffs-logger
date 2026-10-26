@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   checkInvalidKeyThrottle,
@@ -21,56 +21,27 @@ function exhaust(clientIp: string, at: number = NOW): void {
 }
 
 describe("clientIpFromHeaders", () => {
-  it("takes the first x-forwarded-for entry, trimmed", () => {
-    const headers = new Headers({
-      "x-forwarded-for": "  203.0.113.9 , 10.0.0.1, 10.0.0.2",
-    });
-
-    expect(clientIpFromHeaders(headers)).toBe("203.0.113.9");
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
-  it("falls back to x-real-ip when x-forwarded-for is absent", () => {
-    const headers = new Headers({ "x-real-ip": "198.51.100.4" });
+  it("knows no address with no trusted proxy, so a forged header throttles nobody", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", undefined);
+    vi.stubEnv("VERCEL", undefined);
 
-    expect(clientIpFromHeaders(headers)).toBe("198.51.100.4");
+    expect(
+      clientIpFromHeaders(new Headers({ "x-forwarded-for": "203.0.113.9" })),
+    ).toBeNull();
   });
 
-  it("falls back to x-real-ip when the forwarded entry is empty", () => {
-    const headers = new Headers({
-      "x-forwarded-for": ", 10.0.0.1",
-      "x-real-ip": "198.51.100.4",
-    });
+  it("takes the entry the trusted proxy appended, never the client's forged first one", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "1");
 
-    expect(clientIpFromHeaders(headers)).toBe("198.51.100.4");
-  });
-
-  it("prefers x-forwarded-for over x-real-ip when both are present", () => {
-    const headers = new Headers({
-      "x-forwarded-for": "203.0.113.9",
-      "x-real-ip": "198.51.100.4",
-    });
-
-    expect(clientIpFromHeaders(headers)).toBe("203.0.113.9");
-  });
-
-  it("reports no address when neither header is present", () => {
-    expect(clientIpFromHeaders(new Headers())).toBeNull();
-  });
-
-  it("reports no address for a value too long to be one", () => {
-    const headers = new Headers({ "x-forwarded-for": "9".repeat(65) });
-
-    expect(clientIpFromHeaders(headers)).toBeNull();
-  });
-
-  it("accepts a bracketed IPv6 address with a port", () => {
-    const headers = new Headers({
-      "x-forwarded-for": "[2001:db8:85a3:8d3:1319:8a2e:370:7348]:65535",
-    });
-
-    expect(clientIpFromHeaders(headers)).toBe(
-      "[2001:db8:85a3:8d3:1319:8a2e:370:7348]:65535",
-    );
+    expect(
+      clientIpFromHeaders(
+        new Headers({ "x-forwarded-for": "198.51.100.1, 203.0.113.9" }),
+      ),
+    ).toBe("203.0.113.9");
   });
 });
 

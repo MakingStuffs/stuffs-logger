@@ -4,6 +4,7 @@ import {
   MAX_BODY_BYTES,
 } from "@stuffs-logger/core";
 import {
+  afterEach,
   beforeEach,
   describe,
   expect,
@@ -462,6 +463,36 @@ describe("POST /api/v1/ingest", () => {
 
     beforeEach(() => {
       vi.mocked(prismaIngestKeyStore.findPublicKey).mockResolvedValue(null);
+      // The throttle only keys on an address a trusted proxy vouched for.
+      vi.stubEnv("TRUSTED_PROXY_HOPS", "1");
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("stands down with no trusted proxy, so a forged address throttles nobody", async () => {
+      vi.stubEnv("TRUSTED_PROXY_HOPS", "0");
+      await spray(INVALID_KEY_MAX_REFUSALS + 5, CLIENT_IP);
+
+      expect(prismaIngestKeyStore.findPublicKey).toHaveBeenCalledTimes(
+        INVALID_KEY_MAX_REFUSALS + 5,
+      );
+    });
+
+    it("ignores a forged first hop and throttles the address the proxy saw", async () => {
+      for (let attempt = 0; attempt < INVALID_KEY_MAX_REFUSALS; attempt += 1) {
+        await POST(
+          makeRequest(batch(), {
+            "x-forwarded-for": `198.51.100.${attempt}, ${CLIENT_IP}`,
+          }),
+        );
+      }
+
+      const response = await POST(
+        makeRequest(batch(), { "x-forwarded-for": `6.6.6.6, ${CLIENT_IP}` }),
+      );
+      expect(response.status).toBe(429);
     });
 
     it("stops looking up keys for an address once its allowance is spent", async () => {
