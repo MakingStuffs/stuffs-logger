@@ -46,14 +46,27 @@ const ESCAPE = codePoint(0x1b);
 const BELL = codePoint(0x07);
 
 /**
+ * Longest OSC payload that is still stripped as one sequence. A terminal
+ * title or hyperlink is far shorter; anything longer is treated as text that
+ * happens to start with `ESC ]`.
+ */
+const MAX_OSC_PAYLOAD_LENGTH = 1024;
+
+/**
  * ANSI escape sequences: CSI (`ESC [ ... final`), OSC (`ESC ] ... BEL` or
  * `ESC ] ... ESC \`), and the two-character forms.
  *
  * Removed BEFORE the control-character pass: stripping the leading ESC first
  * would leave the `[31m` payload behind as literal text.
+ *
+ * The OSC terminator is REQUIRED and the payload is bounded. An optional
+ * terminator let an unterminated `ESC ]` match to the end of the string, so
+ * `ESC ]important: payment failed` sanitised to "" — the sequence swallowed
+ * the message. Without a terminator the two-character branch now strips only
+ * the `ESC ]` itself (`]` sits inside `[@-Z\\-_]`) and the text survives.
  */
 const ANSI_SEQUENCE = new RegExp(
-  `${ESCAPE}(?:\\[[0-9;:?]*[ -/]*[@-~]|\\][^${BELL}${ESCAPE}]*(?:${BELL}|${ESCAPE}\\\\)?|[@-Z\\\\-_])`,
+  `${ESCAPE}(?:\\[[0-9;:?]*[ -/]*[@-~]|\\][^${BELL}${ESCAPE}]{0,${MAX_OSC_PAYLOAD_LENGTH}}(?:${BELL}|${ESCAPE}\\\\)|[@-Z\\\\-_])`,
   "g",
 );
 
@@ -82,7 +95,71 @@ const BIDI_CONTROLS = new RegExp(
 const CARRIAGE_RETURNS = /\r\n?/g;
 
 /**
- * Strips escape sequences, control characters and bidi overrides from a string.
+ * A complete UTF-16 surrogate pair, or failing that a single surrogate half.
+ *
+ * Deliberately WITHOUT the `u` flag, so the pattern runs on code units: that
+ * is the only way to tell a pair from a stray half. The alternation is
+ * ordered so a well-formed pair is consumed whole and only an unpaired half
+ * reaches the second branch.
+ */
+const SURROGATE_PAIR_OR_LONE_HALF = new RegExp(
+  `[${codePointRange(0xd800, 0xdbff)}][${codePointRange(0xdc00, 0xdfff)}]|[${codePointRange(0xd800, 0xdfff)}]`,
+  "g",
+);
+
+/** U+FFFD, what every well-formedness repair substitutes for a lone half. */
+const REPLACEMENT_CHARACTER = codePoint(0xfffd);
+
+/** How long a surrogate pair is in code units; a lone half is shorter. */
+const SURROGATE_PAIR_LENGTH = 2;
+
+/**
+ * `String.prototype.toWellFormed` is ES2024. This package compiles against
+ * the ES2022 lib because it is published and runs wherever the SDK runs,
+ * which includes browsers that predate the method — so it is detected at
+ * runtime and typed here rather than taken from the lib.
+ */
+interface WithToWellFormed {
+  toWellFormed(): string;
+}
+
+function hasNativeToWellFormed(
+  value: string,
+): value is string & WithToWellFormed {
+  // The assertion only widens to an optional method; the typeof check is what
+  // decides. A plain property access will not compile against the ES2022 lib.
+  return (
+    typeof (value as Partial<WithToWellFormed>).toWellFormed === "function"
+  );
+}
+
+/**
+ * Replaces every unpaired UTF-16 surrogate with U+FFFD.
+ *
+ * A string cut at a UTF-16 boundary — an SDK trimming a message to a byte
+ * budget, a caller slicing a stack trace — carries a lone surrogate half.
+ * That is a valid JavaScript string but not valid Unicode, and Postgres
+ * refuses it: a JSONB column answers "Unicode low surrogate must follow a
+ * high surrogate" and the whole `createMany` fails, taking ninety-nine good
+ * rows down with the one bad character.
+ *
+ * @param value - Any string.
+ * @returns The same string with every lone half replaced.
+ */
+function toWellFormedText(value: string): string {
+  if (hasNativeToWellFormed(value)) return value.toWellFormed();
+
+  return value.replace(SURROGATE_PAIR_OR_LONE_HALF, (match) =>
+    match.length === SURROGATE_PAIR_LENGTH ? match : REPLACEMENT_CHARACTER,
+  );
+}
+
+/**
+ * Strips escape sequences, control characters and bidi overrides from a
+ * string, and repairs any unpaired surrogate so the result is valid Unicode.
+ *
+ * The well-formedness pass runs LAST so the guarantee holds on what is
+ * actually returned, whatever the earlier passes removed.
  *
  * @param value - Untrusted text: a message, a stack trace, a context value.
  * @returns The same text with only printable characters, tabs and newlines.
@@ -90,11 +167,13 @@ const CARRIAGE_RETURNS = /\r\n?/g;
  * sanitiseLogText(`${ESC}[31mred${ESC}[0m`); // "red"
  */
 export function sanitiseLogText(value: string): string {
-  return value
-    .replace(ANSI_SEQUENCE, "")
-    .replace(CARRIAGE_RETURNS, "\n")
-    .replace(CONTROL_CHARACTERS, "")
-    .replace(BIDI_CONTROLS, "");
+  return toWellFormedText(
+    value
+      .replace(ANSI_SEQUENCE, "")
+      .replace(CARRIAGE_RETURNS, "\n")
+      .replace(CONTROL_CHARACTERS, "")
+      .replace(BIDI_CONTROLS, ""),
+  );
 }
 
 /**

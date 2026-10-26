@@ -133,6 +133,9 @@ export async function stampKeyLastUsed(keyId: string, at: Date): Promise<void> {
     await prisma.ingestKey.update({
       where: { id: keyId },
       data: { lastUsedAt: at },
+      // Without a select Prisma RETURNs every column, `secretHash` included,
+      // into application memory on every stamp. Nothing here reads the row.
+      select: { id: true },
     });
   } catch (error) {
     console.warn(

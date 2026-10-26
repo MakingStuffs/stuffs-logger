@@ -28,6 +28,16 @@ describe("formatUtcTimestamp", () => {
   it("returns a placeholder for an unparseable value", () => {
     expect(formatUtcTimestamp("not a date")).toBe(EMPTY_VALUE);
   });
+
+  it("accepts an already-parsed Date, so a row can parse its timestamp once", () => {
+    expect(formatUtcTimestamp(new Date("2026-01-15T09:31:04.123Z"))).toBe(
+      "15 Jan 09:31:04",
+    );
+  });
+
+  it("returns a placeholder for an invalid Date", () => {
+    expect(formatUtcTimestamp(new Date("not a date"))).toBe(EMPTY_VALUE);
+  });
 });
 
 describe("formatUtcTimestampLong", () => {
@@ -35,6 +45,18 @@ describe("formatUtcTimestampLong", () => {
     expect(formatUtcTimestampLong("2026-01-15T09:31:04.007Z")).toBe(
       "15 Jan 2026 09:31:04.007 UTC",
     );
+  });
+
+  it("formats a Date identically to its ISO string", () => {
+    const iso = "2026-01-15T09:31:04.007Z";
+
+    expect(formatUtcTimestampLong(new Date(iso))).toBe(
+      formatUtcTimestampLong(iso),
+    );
+  });
+
+  it("returns a placeholder for an invalid Date", () => {
+    expect(formatUtcTimestampLong(new Date("not a date"))).toBe(EMPTY_VALUE);
   });
 });
 

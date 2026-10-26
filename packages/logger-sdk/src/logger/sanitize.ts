@@ -5,6 +5,7 @@ import {
   MAX_ERROR_NAME_LENGTH,
   MAX_ERROR_STACK_LENGTH,
   MAX_MESSAGE_LENGTH,
+  setJsonEntry,
 } from "../contract";
 import type { JsonValue, LogErrorPayload } from "../contract";
 import {
@@ -52,6 +53,9 @@ const MAX_BYTES_PER_UNIT = 3;
 /** Flat cost charged for a non-string scalar, in place of measuring it. */
 const SCALAR_COST = 8;
 
+/** The first half of a surrogate pair, left behind when a slice splits one. */
+const TRAILING_HIGH_SURROGATE = /[\uD800-\uDBFF]$/;
+
 interface WalkBudget {
   chars: number;
   nodes: number;
@@ -66,8 +70,16 @@ interface WalkBudget {
  */
 export function clampString(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
-  if (maxLength <= TRUNCATION_MARKER.length) return value.slice(0, maxLength);
-  return `${value.slice(0, maxLength - TRUNCATION_MARKER.length)}${TRUNCATION_MARKER}`;
+
+  const marker = maxLength > TRUNCATION_MARKER.length ? TRUNCATION_MARKER : "";
+  // A cut that lands between the halves of a surrogate pair leaves a lone
+  // high surrogate: not valid UTF-16, so not encodable as UTF-8 either, and
+  // the server's JSON parser may refuse the whole batch over it. One code
+  // unit less is the cheaper outcome.
+  const kept = value
+    .slice(0, maxLength - marker.length)
+    .replace(TRAILING_HIGH_SURROGATE, "");
+  return `${kept}${marker}`;
 }
 
 function isErrorLike(
@@ -103,11 +115,13 @@ function stringifyScalar(value: unknown): string {
  * Renders any value as a bounded, non-empty log message.
  *
  * @param value - Whatever the caller passed as the message.
+ * @param redactor - Applied to the keys of an object passed as the message;
+ *   `undefined` disables redaction.
  * @returns A string of at most `MAX_MESSAGE_LENGTH` characters.
  * @example
  * toMessage(new Error("boom")); // "boom"
  */
-export function toMessage(value: unknown): string {
+export function toMessage(value: unknown, redactor?: Redactor): string {
   if (typeof value === "string") return finalizeMessage(value);
   if (isErrorLike(value)) {
     const message = value.message;
@@ -117,12 +131,18 @@ export function toMessage(value: unknown): string {
     return EMPTY_MESSAGE_PLACEHOLDER;
   }
   if (typeof value === "object") {
-    try {
-      const serialized = JSON.stringify(value);
-      if (typeof serialized === "string") return finalizeMessage(serialized);
-    } catch {
-      // Circular or otherwise unserializable — fall through to `String`.
-    }
+    // Walked like a context bag rather than stringified verbatim. An object
+    // passed AS the message — `console.error({ password })` is the common
+    // case — carries the same secrets a context does, and the walk also
+    // bounds the work on a large one to the message budget instead of
+    // serializing all of it only to throw most of it away.
+    const budget: WalkBudget = {
+      chars: MAX_MESSAGE_LENGTH,
+      nodes: MAX_CONTEXT_NODES,
+    };
+    return finalizeMessage(
+      JSON.stringify(walk(value, 0, budget, new Set<object>(), redactor)),
+    );
   }
   return finalizeMessage(stringifyScalar(value));
 }
@@ -137,15 +157,19 @@ function finalizeMessage(value: string): string {
  * Converts a thrown value into the wire contract's error shape.
  *
  * @param value - The caught value, which is very often not an `Error`.
+ * @param redactor - Applied when a thrown plain object becomes the message.
  * @returns The payload, or `undefined` when there was nothing to report.
  * @example
  * serializeError("nope"); // { name: "UnknownError", message: "nope" }
  */
-export function serializeError(value: unknown): LogErrorPayload | undefined {
+export function serializeError(
+  value: unknown,
+  redactor?: Redactor,
+): LogErrorPayload | undefined {
   if (value === null || value === undefined) return undefined;
 
   if (!isErrorLike(value)) {
-    return { name: "UnknownError", message: toMessage(value) };
+    return { name: "UnknownError", message: toMessage(value, redactor) };
   }
 
   const name =
@@ -209,9 +233,8 @@ function walk(
     const iso = safeIsoString(container);
     return iso === undefined ? TRUNCATION_MARKER : iso;
   }
-  if (isErrorLike(container)) {
-    const serialized = serializeError(container);
-    return serialized === undefined ? TRUNCATION_MARKER : { ...serialized };
+  if (container instanceof Error) {
+    return walkError(container, depth, budget, seen, redactor);
   }
 
   seen.add(container);
@@ -238,6 +261,50 @@ function clampBudgetedString(value: string, budget: WalkBudget): string {
   const clamped = clampString(value, Math.max(0, budget.chars));
   budget.chars -= clamped.length + STRUCTURAL_COST;
   return clamped;
+}
+
+/** A string property bounded to a field limit, or `undefined` when absent. */
+function readClamped(
+  source: object,
+  key: string,
+  maxLength: number,
+): string | undefined {
+  const value = readProperty(source, key);
+  return typeof value === "string" ? clampString(value, maxLength) : undefined;
+}
+
+/**
+ * An `Error` met inside a context bag: its three fields, each bounded to the
+ * contract's own ceiling, then walked as the plain object they now are so the
+ * budget is charged for them exactly as for anything else. (`walkObject`
+ * skips an `undefined` field after charging its key — a few characters of
+ * budget, in the direction of a smaller bag.)
+ *
+ * `serializeError` is deliberately NOT reused. It bounds each field to the
+ * contract's limit ALONE, so a bag of 400 errors with 16 KB stacks built a
+ * multi-megabyte intermediate that the final byte check could only replace
+ * wholesale — losing every other key in the bag along with them. Here the
+ * walk stops where the budget does. Only a real `Error` is recognised; a
+ * plain `{ message, stack }` object is an ordinary object at this point.
+ */
+function walkError(
+  error: Error,
+  depth: number,
+  budget: WalkBudget,
+  seen: Set<object>,
+  redactor: Redactor | undefined,
+): JsonObject {
+  return walkObject(
+    {
+      name: readClamped(error, "name", MAX_ERROR_NAME_LENGTH) ?? "Error",
+      message: readClamped(error, "message", MAX_MESSAGE_LENGTH),
+      stack: readClamped(error, "stack", MAX_ERROR_STACK_LENGTH),
+    },
+    depth,
+    budget,
+    seen,
+    redactor,
+  );
 }
 
 function walkArray(
@@ -285,14 +352,16 @@ function walkObject(
 
     budget.chars -= key.length + STRUCTURAL_COST;
 
+    // `setJsonEntry`, never `result[key] =`: a caller's own `__proto__` key
+    // would otherwise hit the inherited accessor and vanish from the output.
     if (redactor?.shouldRedact(key)) {
-      result[key] = redactor.replacement;
+      setJsonEntry(result, key, redactor.replacement);
       continue;
     }
 
     const entry = readProperty(source, key);
     if (entry === undefined) continue;
-    result[key] = walk(entry, depth + 1, budget, seen, redactor);
+    setJsonEntry(result, key, walk(entry, depth + 1, budget, seen, redactor));
   }
 
   return result;
@@ -315,28 +384,58 @@ export function normalizeContext(
 ): JsonObject | undefined {
   if (value === null || typeof value !== "object") return undefined;
 
+  // A top-level array is wrapped BEFORE the walk so the wrapper is counted
+  // against the depth limit. Wrapped afterwards, it shipped one level deeper
+  // than the contract allows and the server refused the whole event.
+  const root = Array.isArray(value) ? { value } : value;
   const budget: WalkBudget = {
     chars: MAX_CONTEXT_BYTES - STRUCTURAL_HEADROOM,
     nodes: MAX_CONTEXT_NODES,
   };
 
-  const normalized = walk(value, 0, budget, new Set<object>(), redactor);
-  if (typeof normalized !== "object" || normalized === null) return undefined;
-
-  const result = Array.isArray(normalized) ? { value: normalized } : normalized;
-  if (Object.keys(result).length === 0) return undefined;
+  const result = walkRoot(root, budget, redactor);
+  if (result === undefined) return undefined;
 
   const unitsUsed = MAX_CONTEXT_BYTES - budget.chars;
   if (
-    unitsUsed > MAX_CONTEXT_BYTES / MAX_BYTES_PER_UNIT &&
-    jsonByteLength(result) > MAX_CONTEXT_BYTES
+    unitsUsed <= MAX_CONTEXT_BYTES / MAX_BYTES_PER_UNIT ||
+    jsonByteLength(result) <= MAX_CONTEXT_BYTES
   ) {
-    // Multi-byte text spent more bytes than code units. Dropping the bag is
-    // better than shipping one the server will refuse.
-    return { [TRUNCATION_MARKER]: true };
+    return result;
   }
 
-  return result;
+  // Multi-byte text, or JSON escapes (a stack trace is one `\n` per frame),
+  // spent more bytes than code units. One more pass at a third of the budget
+  // — the worst ratio UTF-8 reaches — is rare enough to afford and keeps the
+  // bag's shape, where dropping it would keep nothing. Only if even that
+  // does not fit is the bag given up on: shipping one the server refuses
+  // loses the whole event.
+  const retried = walkRoot(
+    root,
+    {
+      chars:
+        Math.floor(MAX_CONTEXT_BYTES / MAX_BYTES_PER_UNIT) -
+        STRUCTURAL_HEADROOM,
+      nodes: MAX_CONTEXT_NODES,
+    },
+    redactor,
+  );
+  if (retried !== undefined && jsonByteLength(retried) <= MAX_CONTEXT_BYTES) {
+    return retried;
+  }
+  return { [TRUNCATION_MARKER]: true };
+}
+
+function walkRoot(
+  root: object,
+  budget: WalkBudget,
+  redactor: Redactor | undefined,
+): JsonObject | undefined {
+  const result = walk(root, 0, budget, new Set<object>(), redactor);
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    return undefined;
+  }
+  return Object.keys(result).length === 0 ? undefined : result;
 }
 
 /**
@@ -401,7 +500,7 @@ function mergeWithinBudget(
       }
 
       used += cost;
-      result[key] = value;
+      setJsonEntry(result, key, value);
     }
   }
 

@@ -1,5 +1,8 @@
 import { getProcess, isBrowserRuntime } from "../context/runtime";
 import type { ProcessLike } from "../context/runtime";
+import { createRedactor } from "../logger/redact";
+import type { Redactor } from "../logger/redact";
+import { redactUrl } from "../logger/redact-url";
 import type { Logger } from "../types";
 
 /**
@@ -11,28 +14,16 @@ import type { Logger } from "../types";
  * - In the browser, calling `preventDefault()` on an `error` or
  *   `unhandledrejection` event suppresses the console output the developer
  *   expects. Nothing here does.
- * - In Node, merely ADDING an `uncaughtException` listener disables the
- *   default crash — the process would keep running in an undefined state
- *   because a logging library attached a listener. `uncaughtExceptionMonitor`
- *   exists precisely for observers: it fires alongside the default handling
- *   and cannot suppress it, so that is what is used.
- *
- * `unhandledRejection` has no monitor variant and a listener does suppress
- * Node's default. Where this SDK is the ONLY listener, the default is
- * reinstated by rethrowing after capture; where the application has its own
- * listener, the application's behaviour already governs and nothing is
- * rethrown.
+ * - In Node, merely ADDING an `uncaughtException` or `unhandledRejection`
+ *   listener changes what the process does: the default crash is disabled,
+ *   and for rejections the `--unhandled-rejections` mode the operator chose
+ *   stops applying. `uncaughtExceptionMonitor` exists precisely for
+ *   observers — it fires alongside the default handling and cannot suppress
+ *   it — and its `origin` argument says whether the exception began as a
+ *   throw or as a rejection nothing handled. That one listener is the whole
+ *   Node side: a rejection is seen exactly once, as the exception Node is
+ *   about to raise it as, never through a listener of its own.
  */
-
-/** Tuning for {@link captureErrors}. */
-export interface ErrorCaptureOptions {
-  /**
-   * Preserve Node's default "crash on an unhandled rejection" behaviour by
-   * rethrowing once the rejection has been captured, but only when this SDK is
-   * the sole `unhandledRejection` listener. Defaults to `true`.
-   */
-  rethrowUnhandledRejections?: boolean;
-}
 
 /** Undoes a `captureErrors()` call. Safe to call more than once. */
 export type RestoreErrorHandlers = () => void;
@@ -40,6 +31,13 @@ export type RestoreErrorHandlers = () => void;
 const noRestore: RestoreErrorHandlers = () => {};
 
 let activeRestore: RestoreErrorHandlers | undefined;
+
+/**
+ * Built once, lazily, for the failing script's url. This capture has no
+ * handle on the logger's redaction configuration, and a script url is still a
+ * url: the built-in list is the floor the server applies to it anyway.
+ */
+let defaultRedactor: Redactor | undefined;
 
 function captureBrowserErrors(logger: Logger): RestoreErrorHandlers {
   const onError = (event: ErrorEvent): void => {
@@ -49,7 +47,10 @@ function captureBrowserErrors(logger: Logger): RestoreErrorHandlers {
       message: event.message || event.error,
       error: event.error,
       context: {
-        filename: event.filename,
+        filename: redactUrl(
+          event.filename,
+          (defaultRedactor ??= createRedactor(undefined)),
+        ),
         line: event.lineno,
         column: event.colno,
       },
@@ -77,41 +78,27 @@ function captureBrowserErrors(logger: Logger): RestoreErrorHandlers {
 function captureNodeErrors(
   logger: Logger,
   runtime: ProcessLike,
-  rethrowRejections: boolean,
 ): RestoreErrorHandlers {
-  const onUncaught = (error: unknown): void => {
+  const onUncaught = (error: unknown, origin: unknown): void => {
+    // `origin` is `"uncaughtException"` or `"unhandledRejection"`. Either
+    // way Node is raising it as an uncaught exception, so both are fatal;
+    // the kind records which path it arrived by.
     logger.capture({
       level: "fatal",
-      logger: "uncaughtException",
+      logger:
+        origin === "unhandledRejection"
+          ? "unhandledrejection"
+          : "uncaughtException",
       message: error,
       error,
     });
     void logger.flush();
   };
 
-  const onRejection = (reason: unknown): void => {
-    logger.capture({
-      level: "error",
-      logger: "unhandledrejection",
-      message: reason,
-      error: reason,
-    });
-    void logger.flush();
-
-    const listenerCount = runtime.listeners?.("unhandledRejection").length ?? 0;
-    if (rethrowRejections && listenerCount <= 1) {
-      // Restores Node's default: an unhandled rejection becomes an uncaught
-      // exception and the process exits, exactly as it would have without us.
-      throw reason;
-    }
-  };
-
   runtime.on?.("uncaughtExceptionMonitor", onUncaught);
-  runtime.on?.("unhandledRejection", onRejection);
 
   return () => {
     runtime.off?.("uncaughtExceptionMonitor", onUncaught);
-    runtime.off?.("unhandledRejection", onRejection);
   };
 }
 
@@ -119,21 +106,17 @@ function captureNodeErrors(
  * Reports uncaught errors and unhandled promise rejections to a logger.
  *
  * @param logger - Where the failures are sent.
- * @param options - Whether to preserve Node's default rejection behaviour.
  * @returns A disposer removing every handler installed. A second call while
  *   handlers are installed returns that same disposer.
  * @example
  * const restore = captureErrors(logger);
  */
-export function captureErrors(
-  logger: Logger,
-  options: ErrorCaptureOptions = {},
-): RestoreErrorHandlers {
+export function captureErrors(logger: Logger): RestoreErrorHandlers {
   if (activeRestore) return activeRestore;
 
   const remove = isBrowserRuntime()
     ? captureBrowserErrors(logger)
-    : nodeHandlers(logger, options);
+    : nodeHandlers(logger);
 
   const restore: RestoreErrorHandlers = () => {
     remove();
@@ -144,15 +127,8 @@ export function captureErrors(
   return restore;
 }
 
-function nodeHandlers(
-  logger: Logger,
-  options: ErrorCaptureOptions,
-): RestoreErrorHandlers {
+function nodeHandlers(logger: Logger): RestoreErrorHandlers {
   const runtime = getProcess();
   if (!runtime) return noRestore;
-  return captureNodeErrors(
-    logger,
-    runtime,
-    options.rethrowUnhandledRejections !== false,
-  );
+  return captureNodeErrors(logger, runtime);
 }

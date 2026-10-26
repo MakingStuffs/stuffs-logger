@@ -46,6 +46,12 @@ import type { RedactionOptions } from "../types";
  */
 export type Redactor = KeyRedactor;
 
+/** Verdicts remembered per redactor before the memo is emptied. */
+const MAX_MEMO_ENTRIES = 256;
+
+/** Keys longer than this are not remembered: a bag of them would BE the memo. */
+const MAX_MEMO_KEY_LENGTH = 128;
+
 /**
  * Builds the redactor for a logger.
  *
@@ -59,5 +65,25 @@ export function createRedactor(
 ): Redactor | undefined {
   if (options?.enabled === false) return undefined;
 
-  return createKeyRedactor(options);
+  const matcher = createKeyRedactor(options);
+  // Keys repeat across events — `userId`, `path`, `viewport` — and every
+  // verdict costs a normalisation plus a scan of the whole pattern list, on
+  // the caller's thread. A bounded memo makes the repeat a map lookup;
+  // emptying it when full is simpler than an LRU and, at this size, no worse.
+  const verdicts = new Map<string, boolean>();
+
+  return {
+    replacement: matcher.replacement,
+    shouldRedact(key: string): boolean {
+      let verdict = verdicts.get(key);
+      if (verdict === undefined) {
+        verdict = matcher.shouldRedact(key);
+        if (key.length <= MAX_MEMO_KEY_LENGTH) {
+          if (verdicts.size >= MAX_MEMO_ENTRIES) verdicts.clear();
+          verdicts.set(key, verdict);
+        }
+      }
+      return verdict;
+    },
+  };
 }

@@ -13,12 +13,21 @@ import {
   recallCorsHeaders,
   rememberCorsHeaders,
 } from "@/lib/ingest/cors-context";
+import {
+  checkInvalidKeyThrottle,
+  clientIpFromHeaders,
+  recordInvalidKeyRefusal,
+} from "@/lib/ingest/invalid-key-throttle";
 import { keyClassAllowsSource, verifyIngestKey } from "@/lib/ingest/keys";
 import { normaliseBatch, type RejectedEvent } from "@/lib/ingest/normalise";
 import { isOriginRegisteredCached } from "@/lib/ingest/origin-registry";
 import { consumeDailyQuota } from "@/lib/ingest/quota";
 import { consumeRateLimit } from "@/lib/ingest/rate-limit";
 import { shouldStampLastUsed } from "@/lib/ingest/last-used";
+import {
+  isSecretKeyExposedToBrowser,
+  shouldWarnSecretKeyExposure,
+} from "@/lib/ingest/secret-key-exposure";
 import {
   insertLogEvents,
   listRegisteredOrigins,
@@ -33,9 +42,10 @@ import {
  * AUTH TIER: PUBLIC-ADJACENT. There is no user session here and never will be:
  * the caller is a browser bundle or a server process presenting an ingest key.
  * Everything about the request is hostile input — the key, the origin, the
- * body, the clock, the user agent — so the order below is deliberate and each
- * step is cheap before the one after it:
+ * body, the clock, the user agent, the proxy's address headers — so the order
+ * below is deliberate and each step is cheap before the one after it:
  *
+ *   0. client  — refuse an address that has burned its invalid-key budget (429)
  *   1. key     — parse, look up, compare in constant time (401)
  *   2. origin  — exact match against that key's allowlist (403)
  *   3. rate    — count the request against the key's in-instance window (429)
@@ -46,9 +56,11 @@ import {
  *
  * The credential is checked BEFORE the body is read, so an anonymous flood
  * costs one indexed lookup rather than a buffered payload, and the rate limit
- * applies to work this endpoint has not done yet. It also means every refusal
- * from step 3 onwards carries CORS headers, so the SDK reads a real status
- * instead of an opaque network error.
+ * applies to work this endpoint has not done yet. Step 0 bounds even that
+ * lookup: an address that keeps presenting keys that do not exist stops being
+ * looked up at all for a minute. It also means every refusal from step 3
+ * onwards carries CORS headers, so the SDK reads a real status instead of an
+ * opaque network error.
  *
  * Steps 3 and 6 are two different controls, not one repeated: step 3 is
  * per-instance memory and is free, step 6 is a durable per-application ceiling
@@ -83,29 +95,91 @@ interface BoundedBody {
   byteLength: number;
 }
 
-/** Reads the body as bytes, refusing anything over the limit. */
+/** Longest attacker-controlled header value quoted into a log line. */
+const MAX_LOGGED_VALUE_LENGTH = 256;
+
+/**
+ * Quotes an attacker-controlled header value for a log line.
+ *
+ * `JSON.stringify` escapes control characters and quotes, so a newline in an
+ * `Origin` cannot forge a second log line and a terminal escape cannot colour
+ * one; the cap stops a 16 KB header from becoming a 16 KB log entry.
+ */
+function quoteForLog(value: string | null): string {
+  if (value === null) return "<none>";
+  return JSON.stringify(value.slice(0, MAX_LOGGED_VALUE_LENGTH));
+}
+
+/** The one error every oversized body is answered with. */
+function payloadTooLarge(logContext: string): ApiError {
+  return new ApiError("PAYLOAD_TOO_LARGE", "Request body is too large.", {
+    logContext,
+  });
+}
+
+/**
+ * Reads the body as bytes, refusing anything over the limit WHILE it arrives.
+ *
+ * `request.arrayBuffer()` would buffer the entire body before its length could
+ * be compared, and on plain Node the body is the raw socket stream with no cap
+ * of its own: a chunked upload with no `content-length` could stream gigabytes
+ * into one connection before the check ever ran. So the stream is read chunk
+ * by chunk with a running total, and the moment the total passes the limit
+ * the reader is cancelled — the rest of the upload is never received, let
+ * alone held in memory.
+ */
 async function readBoundedBody(request: Request): Promise<BoundedBody> {
-  // The advertised length is checked first so an oversized upload is refused
-  // before it is buffered. It is a claim, not a fact, so the real size is
-  // checked again below.
+  // The advertised length is checked first so an honestly oversized upload is
+  // refused before a single byte is read. It is a claim, not a fact, so the
+  // real size is counted below regardless.
   const advertised = Number(request.headers.get("content-length") ?? "");
   if (Number.isFinite(advertised) && advertised > MAX_BODY_BYTES) {
-    throw new ApiError("PAYLOAD_TOO_LARGE", "Request body is too large.", {
-      logContext: `content-length ${advertised} exceeds ${MAX_BODY_BYTES}`,
-    });
+    throw payloadTooLarge(
+      `content-length ${advertised} exceeds ${MAX_BODY_BYTES}`,
+    );
   }
 
-  const buffer = await request.arrayBuffer();
-  if (buffer.byteLength > MAX_BODY_BYTES) {
-    throw new ApiError("PAYLOAD_TOO_LARGE", "Request body is too large.", {
-      logContext: `body ${buffer.byteLength} bytes exceeds ${MAX_BODY_BYTES}`,
-    });
+  if (request.body === null) {
+    throw new ApiError("INVALID_INPUT", "Request body is required.");
   }
 
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      byteLength += value.byteLength;
+      if (byteLength > MAX_BODY_BYTES) {
+        // Cancelling tells the source to stop producing; a failure to cancel
+        // changes nothing about the refusal, so it is not allowed to mask it.
+        await reader.cancel().catch(() => undefined);
+        throw payloadTooLarge(
+          `body exceeded ${MAX_BODY_BYTES} bytes after ${byteLength} received`,
+        );
+      }
+
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  // Decoded once, from one contiguous buffer: a multi-byte character split
+  // across two chunks would otherwise decode as two replacement characters.
+  const buffer = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   const text = new TextDecoder().decode(buffer);
 
   try {
-    return { value: JSON.parse(text), byteLength: buffer.byteLength };
+    return { value: JSON.parse(text), byteLength };
   } catch {
     throw new ApiError("INVALID_INPUT", "Request body must be valid JSON.");
   }
@@ -113,6 +187,26 @@ async function readBoundedBody(request: Request): Promise<BoundedBody> {
 
 const handlePost = async (request: Request): Promise<NextResponse> => {
   const origin = request.headers.get("origin");
+  const clientIp = clientIpFromHeaders(request.headers);
+
+  // Consulted BEFORE the key is even parsed, so a throttled address costs
+  // nothing. No origin has been granted yet, so the refusal carries only
+  // `Vary: Origin` — which is the recall fallback — and the retry hint goes
+  // in the body rather than a header the browser could not read anyway.
+  if (clientIp !== null) {
+    const throttle = checkInvalidKeyThrottle(clientIp);
+    if (throttle.throttled) {
+      throw new ApiError(
+        "RATE_LIMITED",
+        "Too many failed requests from this client.",
+        {
+          details: { retryAfterSeconds: throttle.retryAfterSeconds },
+          logContext: `client ${quoteForLog(clientIp)} exceeded the invalid-key window`,
+        },
+      );
+    }
+  }
+
   const verification = await verifyIngestKey(
     request.headers.get(INGEST_KEY_HEADER),
     {
@@ -130,10 +224,16 @@ const handlePost = async (request: Request): Promise<NextResponse> => {
         "FORBIDDEN",
         "This origin is not allowed to use this key.",
         {
-          logContext: `origin ${origin ?? "<none>"} not on key allowlist`,
+          logContext: `origin ${quoteForLog(origin)} not on key allowlist`,
         },
       );
     }
+
+    // Only an invalid KEY counts towards the throttle. An origin refusal
+    // above needed a live key to reach, and is a developer to be helped, not
+    // a guesser to be slowed.
+    if (clientIp !== null) recordInvalidKeyRefusal(clientIp);
+
     throw new ApiError("UNAUTHORIZED", "Invalid ingest key.", {
       logContext: "key unknown, malformed, revoked or mismatched",
     });
@@ -179,6 +279,18 @@ const handlePost = async (request: Request): Promise<NextResponse> => {
       {
         logContext: `public key ${key.id} presented for source ${envelope.envelope.source}`,
       },
+    );
+  }
+
+  // The inverse mistake is accepted but not silent: a secret key arriving
+  // from a browser means a customer shipped it in a bundle, where anyone can
+  // read it. Once a minute per key is enough to be noticed.
+  if (
+    isSecretKeyExposedToBrowser(key.type, origin, envelope.envelope.source) &&
+    shouldWarnSecretKeyExposure(key.id)
+  ) {
+    console.warn(
+      `[ingest.post] secret key ${key.id} presented from a browser (origin ${quoteForLog(origin)}): secret keys must never ship in client bundles — rotate it and issue a public key`,
     );
   }
 

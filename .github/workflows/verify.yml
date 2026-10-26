@@ -1,0 +1,200 @@
+# The verification suite, as a REUSABLE workflow.
+#
+# It exists so that "the release is gated on the same checks the pull request
+# ran" is literally true rather than approximately true: `ci.yml` and
+# `release.yml` both call this file, so the two can never drift into checking
+# different things. Nothing triggers it directly.
+name: Verify
+
+on:
+  workflow_call:
+
+# Least privilege. A called workflow that declares its own `permissions` gets
+# exactly these regardless of what the caller holds, so nothing here can reach
+# the write token `release.yml` needs for its own job.
+permissions:
+  contents: read
+
+env:
+  # PINNED, not read from `engines.node`.
+  #
+  # `engines.node` is the RANGE ">=22", and resolving a range means CI silently
+  # moves to whatever Node is newest — which is how a green pipeline turns red
+  # on a morning nobody changed anything. 24 is chosen because
+  # `semantic-release@25` declares `engines.node: "^22.14.0 || >= 24.10.0"`, so
+  # it is the only major that satisfies both the repository and the release
+  # tool. pnpm IS read from the manifest: `pnpm/action-setup` takes its version
+  # from the root `packageManager` field when none is given.
+  NODE_VERSION: "24"
+
+jobs:
+  static:
+    name: Format, lint and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # Caches the pnpm store, keyed on the lockfile. Must come AFTER
+          # pnpm/action-setup, which is what puts `pnpm` on the PATH for the
+          # cache path lookup.
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # A hard gate, even though `ci.yml` also pushes the fix back: a fork
+      # cannot be auto-formatted (it would need a write token), so the check
+      # has to stand on its own. Contributors run `pnpm format`.
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      # `typecheck` runs `prisma generate` first, so it needs no database.
+      - name: Typecheck
+        run: pnpm typecheck
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No database: every suite here runs against injected stores or in
+      # memory. The dashboard's `test` script generates the Prisma client
+      # first, which is what its type imports need.
+      - name: Run unit tests
+        run: pnpm test:unit
+
+  build:
+    name: Build and pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build every package
+        run: pnpm build
+
+      # Packs both published packages and audits the tarballs — every entry
+      # point in the `exports` map resolves to a file that is actually inside
+      # it, and the SDK's pinned core version is exact. Offline, and it
+      # publishes nothing. Catching a broken tarball here rather than on npm
+      # matters because a published version cannot be replaced.
+      - name: Verify the publishable tarballs
+        run: pnpm release:verify-pack
+
+  e2e:
+    name: End-to-end and smoke
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # `postgres:17-alpine`, pinned by DIGEST for the same reason the
+        # actions are pinned by SHA: a tag is mutable and a service container
+        # shares the runner's network with the job. It is written inline
+        # because the `env` context is not available in `jobs.<id>.services`,
+        # so there is nowhere else for it to live.
+        image: postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stuffs_logger_e2e
+        ports:
+          - 5432:5432
+        # Without a health check the job races the database's first-boot
+        # initialisation and fails on connection refused perhaps one run in ten.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # A THROWAWAY DATABASE, created empty by the service container above and
+      # destroyed with the runner. `prisma migrate deploy` applies the
+      # committed migrations to it and the seed setup project fills it; nothing
+      # here touches a real deployment.
+      E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/stuffs_logger_e2e
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Chromium only, matching the single browser project in
+      # `apps/dashboard/playwright.config.ts`. `--with-deps` installs the
+      # system libraries the runner image does not carry.
+      - name: Install the Playwright browser
+        run: pnpm --filter @stuffs-logger/dashboard exec playwright install --with-deps chromium
+
+      # BOTH SUITES, ONE SERVER, ONE INVOCATION. `pnpm test:e2e` builds the
+      # SDK the round-trip spec loads and runs Playwright with
+      # `--project=chromium`; pnpm appends the extra `--project=smoke` to the
+      # script it runs (and the root script forwards it to the dashboard's),
+      # so the smoke chain runs in the same process as the e2e chain, against
+      # the same managed dashboard, with no second `next build` and no second
+      # `next start`. The Playwright config builds and starts that dashboard
+      # against the service container, applies the migrations and seeds the
+      # fixtures; `SMOKE_BASE_URL` names the same server for the smoke
+      # project, which the config then makes wait for `migrate` (see
+      # `smokeTargetsManagedServer` in playwright.config.ts).
+      #
+      # `E2E_BASE_URL` is deliberately NOT set: here the managed server IS the
+      # target. Setting it is how `smoke.yml` says "the server is somebody
+      # else's", and it would skip the build this job exists to prove.
+      #
+      # The smoke subset runs on every pull request so the suite that gates
+      # production is never the one nobody exercises.
+      - name: Run the e2e and smoke suites
+        env:
+          SMOKE_BASE_URL: http://127.0.0.1:3000
+        run: pnpm test:e2e --project=smoke
+
+      # Only on failure: a green run's report is a hundred megabytes nobody
+      # opens. Traces and screenshots live under `test-results/`; neither ever
+      # contains a secret, because the only credentials in play are the
+      # disposable fixtures this job seeded.
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            apps/dashboard/playwright-report/
+            apps/dashboard/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PAGE_SIZE, parseLogFilters } from "@/lib/logs/filters";
+import { DEFAULT_PAGE_SIZE } from "@/lib/logs/constants";
+import { parseLogFilters } from "@/lib/logs/filters";
 import type { LogFilters } from "@/lib/logs/filters";
 
 import {
@@ -8,6 +9,7 @@ import {
   buildLogsHref,
   firstPageHref,
   hasActiveFilters,
+  hasSecondaryFilter,
   nextPageHref,
   normaliseSearchParams,
   timeRangeHref,
@@ -104,7 +106,7 @@ describe("buildLogsHref", () => {
       from: new Date("2026-01-15T09:00:00.000Z"),
       to: new Date("2026-01-16T09:00:00.000Z"),
       search: "timeout",
-      cursor: "event-1",
+      cursor: "2026-01-15T09:00:00.000Z_event-1",
       limit: 200,
     });
 
@@ -116,6 +118,25 @@ describe("buildLogsHref", () => {
     }
 
     expect(parseLogFilters(raw)).toEqual({ ok: true, filters });
+  });
+
+  it("omits a lower bound the validator defaulted, so a search link does not pin it", () => {
+    const href = buildLogsHref({
+      search: "boom",
+      from: new Date("2026-01-15T09:00:00.000Z"),
+      fromDefaulted: true,
+    });
+
+    expect(href).toBe("/logs?search=boom");
+  });
+
+  it("keeps a lower bound the caller chose", () => {
+    const href = buildLogsHref({
+      search: "boom",
+      from: new Date("2026-01-15T09:00:00.000Z"),
+    });
+
+    expect(href).toBe("/logs?from=2026-01-15T09%3A00%3A00.000Z&search=boom");
   });
 });
 
@@ -149,6 +170,57 @@ describe("page hrefs", () => {
 
     expect(href).toBe("/logs");
   });
+
+  it("replaces a defaulted lower bound with the quick-range's explicit one", () => {
+    const href = timeRangeHref(
+      makeFilters({
+        search: "boom",
+        from: new Date("2026-01-15T09:00:00.000Z"),
+        fromDefaulted: true,
+      }),
+      new Date("2026-01-14T09:00:00.000Z"),
+    );
+
+    expect(href).toBe("/logs?from=2026-01-14T09%3A00%3A00.000Z&search=boom");
+  });
+
+  it("says window=all for an all-time range while a search is active, so the default cannot override it", () => {
+    const href = timeRangeHref(
+      makeFilters({
+        search: "boom",
+        from: new Date("2026-01-15T09:00:00.000Z"),
+        fromDefaulted: true,
+      }),
+      undefined,
+    );
+
+    expect(href).toBe("/logs?search=boom&window=all");
+  });
+
+  it("drops window=all again when a bounded range is chosen", () => {
+    const href = timeRangeHref(
+      makeFilters({ search: "boom", window: "all" }),
+      new Date("2026-01-14T09:00:00.000Z"),
+    );
+
+    expect(href).toBe("/logs?from=2026-01-14T09%3A00%3A00.000Z&search=boom");
+  });
+
+  it("never writes a window into a link that is not searching", () => {
+    expect(buildLogsHref({ window: "all" })).toBe("/logs");
+    expect(buildLogsHref({ level: ["error"], window: "all" })).toBe(
+      "/logs?level=error",
+    );
+  });
+
+  it("carries window=all onto the next page of a search", () => {
+    const href = nextPageHref(
+      makeFilters({ search: "boom", window: "all" }),
+      "event-9",
+    );
+
+    expect(href).toBe("/logs?search=boom&window=all&cursor=event-9");
+  });
 });
 
 describe("applicationLogsHref", () => {
@@ -178,5 +250,21 @@ describe("hasActiveFilters", () => {
 
   it("is true when a filter narrows the stream", () => {
     expect(hasActiveFilters(makeFilters({ level: ["error"] }))).toBe(true);
+  });
+});
+
+describe("hasSecondaryFilter", () => {
+  it("is false when only the always-visible filters are set", () => {
+    expect(
+      hasSecondaryFilter(makeFilters({ level: ["error"], search: "boom" })),
+    ).toBe(false);
+  });
+
+  it.each<[string, Partial<LogFilters>]>([
+    ["a source", { source: ["browser"] }],
+    ["a device", { deviceType: ["mobile"] }],
+    ["an environment", { environment: ["staging"] }],
+  ])("is true when %s filter is applied", (_name, overrides) => {
+    expect(hasSecondaryFilter(makeFilters(overrides))).toBe(true);
   });
 });

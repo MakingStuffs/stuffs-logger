@@ -55,6 +55,16 @@ function isOurPatch(candidate: unknown): boolean {
   return typeof candidate === "function" && PATCH_MARKER in candidate;
 }
 
+/**
+ * Only names from the SDK's own list are patched. A caller-supplied name such
+ * as `"constructor"` or `"toString"` would otherwise be looked up on the
+ * console snapshot, found on its prototype, found to be a function — and
+ * wrapped.
+ */
+function isConsoleMethod(candidate: unknown): candidate is ConsoleMethod {
+  return CONSOLE_METHODS.includes(candidate as ConsoleMethod);
+}
+
 function mark(patched: ConsoleWriter): ConsoleWriter {
   Object.defineProperty(patched, PATCH_MARKER, { value: true });
   return patched;
@@ -106,7 +116,7 @@ export function captureConsole(
   const host = consoleHost();
   if (!host) return noRestore;
 
-  const methods = options.methods ?? CONSOLE_METHODS;
+  const methods = (options.methods ?? CONSOLE_METHODS).filter(isConsoleMethod);
   const levels = { ...DEFAULT_CONSOLE_LEVELS, ...options.levels };
   const installed: Partial<Record<ConsoleMethod, ConsoleWriter>> = {};
 
@@ -125,7 +135,15 @@ export function captureConsole(
       });
     });
 
-    host[method] = patched;
+    try {
+      host[method] = patched;
+    } catch {
+      // A frozen or sealed console refuses the assignment (every build of
+      // this package is strict-mode code, so it throws rather than failing
+      // silently). That method goes uncaptured, which beats throwing out of
+      // the call an application made to make itself MORE observable.
+      continue;
+    }
     installed[method] = patched;
   }
 

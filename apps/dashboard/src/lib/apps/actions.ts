@@ -3,12 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { assertAdminViewer } from "@/lib/access";
-import { getSession } from "@/lib/auth/session";
-import { isApiError } from "@/lib/api/errors";
 import { prisma } from "@/lib/db";
 import { generateIngestKey } from "@/lib/ingest/keys";
 import type { IngestKeyType } from "@/lib/ingest/keys";
+
+import { requireAdminCaller } from "./admin-caller";
 
 /**
  * Ingest-key mutations.
@@ -19,9 +18,10 @@ import type { IngestKeyType } from "@/lib/ingest/keys";
  * and re-validates its input — nothing is trusted because the form that
  * normally submits it happens to be rendered behind a gate.
  *
- * These are the only mutations the dashboard performs. Reads stay in
- * `lib/apps/queries.ts` and `lib/logs/queries.ts`, where the session is passed
- * in by the page that already gated itself.
+ * The gate itself lives in `./admin-caller.ts`, shared with the application
+ * mutations in `./application-actions.ts`. Reads stay in `lib/apps/queries.ts`
+ * and `lib/logs/queries.ts`, where the session is passed in by the page that
+ * already gated itself.
  */
 
 /** The two key designs, as a runtime vocabulary for validation. */
@@ -85,48 +85,12 @@ const revokeIngestKeySchema = z.object({
    * framework CSRF check. Something only a human looking at the row can supply
    * is what separates the two.
    */
-  confirmName: z.string().trim().min(1).max(MAX_KEY_NAME_LENGTH),
+  confirmName: z
+    .string()
+    .trim()
+    .min(1, "Type the key's name exactly.")
+    .max(MAX_KEY_NAME_LENGTH, "Type the key's name exactly."),
 });
-
-/** Whether the caller may manage keys, or the refusal to return to the form. */
-type AdminCaller = { ok: true } | { ok: false; result: IngestKeyActionResult };
-
-/**
- * Resolves the caller and checks they may manage keys.
- *
- * Done inside every action rather than once at the page: the page gate
- * protects the page, and this endpoint is reachable without it.
- *
- * The refusal is narrowed on `hasAccess`, never on the truthiness of the
- * result — the refused arm is an object and would pass a truthiness test.
- */
-async function requireAdminCaller(): Promise<AdminCaller> {
-  const access = await getSession();
-
-  if (!access.hasAccess) {
-    return {
-      ok: false,
-      result: {
-        status: "error",
-        message:
-          access.reason === "INACTIVE"
-            ? "Your account is no longer active."
-            : "You need to sign in again.",
-      },
-    };
-  }
-
-  try {
-    assertAdminViewer(access.session);
-  } catch (error) {
-    if (isApiError(error)) {
-      return { ok: false, result: { status: "error", message: error.message } };
-    }
-    throw error;
-  }
-
-  return { ok: true };
-}
 
 /**
  * Splits the origin textarea into distinct entries.
@@ -213,7 +177,7 @@ export async function createIngestKeyAction(
   formData: FormData,
 ): Promise<IngestKeyActionResult> {
   const caller = await requireAdminCaller();
-  if (!caller.ok) return caller.result;
+  if (!caller.ok) return caller.refusal;
 
   const parsed = createIngestKeySchema.safeParse(
     Object.fromEntries(formData.entries()),
@@ -284,7 +248,7 @@ export async function revokeIngestKeyAction(
   formData: FormData,
 ): Promise<IngestKeyActionResult> {
   const caller = await requireAdminCaller();
-  if (!caller.ok) return caller.result;
+  if (!caller.ok) return caller.refusal;
 
   const parsed = revokeIngestKeySchema.safeParse(
     Object.fromEntries(formData.entries()),

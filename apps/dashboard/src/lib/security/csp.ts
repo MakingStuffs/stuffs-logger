@@ -27,6 +27,11 @@
  * them; that is a known, documented weakening rather than an oversight, and it
  * does not undermine `script-src`.
  *
+ * `img-src` is `'self'` plus `data:` and `blob:` and nothing else. Nothing on
+ * the dashboard renders an image from another host — avatars are initials —
+ * so a blanket `https:` would only have been a channel for an injected
+ * element to beacon out through an image request.
+ *
  * EVERY DIRECTIVE IS `'self'` NOW. The app hosts its own authentication, so
  * there is no second origin to allow for session or sign-out calls. One thing
  * to revisit at promotion time: an OAuth sign-in leaves via a server-issued
@@ -69,7 +74,7 @@ export function buildContentSecurityPolicy(nonce: string): string {
     // browsers that honour it, and kept for those that do not.
     "script-src": ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"],
     "style-src": ["'self'", "'unsafe-inline'"],
-    "img-src": ["'self'", "data:", "blob:", "https:"],
+    "img-src": ["'self'", "data:", "blob:"],
     "font-src": ["'self'", "data:"],
     "connect-src": ["'self'"],
     "form-action": ["'self'"],

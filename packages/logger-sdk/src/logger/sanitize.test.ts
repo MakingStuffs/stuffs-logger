@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { jsonDepth } from "@stuffs-logger/core/json";
+
 import {
   jsonByteLength,
   MAX_CONTEXT_BYTES,
+  MAX_CONTEXT_DEPTH,
   MAX_MESSAGE_LENGTH,
 } from "../contract";
 import { createRedactor } from "./redact";
@@ -29,6 +32,20 @@ describe("clampString", () => {
 
   it("never exceeds the maximum length", () => {
     expect(clampString("x".repeat(100), 20).length).toBeLessThanOrEqual(20);
+  });
+
+  it("never ends in half a surrogate pair", () => {
+    // The cut lands between the two code units of the first emoji. A naive
+    // slice leaves a lone high surrogate, which `encodeURIComponent` refuses
+    // the same way a UTF-8 encoder would.
+    const value = `${"a".repeat(8180)}${"\u{1F600}".repeat(10)}`;
+    expect(() => encodeURIComponent(value.slice(0, 8181))).toThrow();
+
+    const clamped = clampString(value, MAX_MESSAGE_LENGTH);
+
+    expect(clamped.length).toBeLessThanOrEqual(MAX_MESSAGE_LENGTH);
+    expect(() => encodeURIComponent(clamped)).not.toThrow();
+    expect(clamped.endsWith("[truncated]")).toBe(true);
   });
 });
 
@@ -65,6 +82,38 @@ describe("toMessage", () => {
       MAX_MESSAGE_LENGTH,
     );
   });
+
+  it("redacts secret-shaped keys of an object passed as the message", () => {
+    const redactor = createRedactor(undefined);
+
+    expect(toMessage({ user: "ada", password: "hunter2" }, redactor)).toBe(
+      '{"user":"ada","password":"[redacted]"}',
+    );
+  });
+
+  it("redacts inside a nested object passed as the message", () => {
+    const redactor = createRedactor(undefined);
+
+    const message = toMessage(
+      { headers: { authorization: "Bearer x" } },
+      redactor,
+    );
+
+    expect(message).toContain("[redacted]");
+    expect(message).not.toContain("Bearer");
+  });
+
+  it("bounds the walk of a huge object to the message budget", () => {
+    const wide: Record<string, string> = {};
+    for (let index = 0; index < 5000; index += 1) {
+      wide[`k${index}`] = "x".repeat(100);
+    }
+
+    const message = toMessage(wide);
+
+    expect(message.length).toBeLessThanOrEqual(MAX_MESSAGE_LENGTH);
+    expect(message).toContain("[truncated]");
+  });
 });
 
 describe("serializeError", () => {
@@ -81,6 +130,15 @@ describe("serializeError", () => {
     expect(serializeError("nope")).toEqual({
       name: "UnknownError",
       message: "nope",
+    });
+  });
+
+  it("redacts a thrown plain object's secret-shaped keys", () => {
+    const redactor = createRedactor(undefined);
+
+    expect(serializeError({ token: "abc" }, redactor)).toEqual({
+      name: "UnknownError",
+      message: '{"token":"[redacted]"}',
     });
   });
 
@@ -156,6 +214,16 @@ describe("normalizeContext", () => {
     ).toBeLessThanOrEqual(MAX_CONTEXT_BYTES);
   });
 
+  it("keeps the shape of a multi-byte bag rather than dropping it wholesale", () => {
+    const huge = { who: "ada", blob: "\u3042".repeat(MAX_CONTEXT_BYTES) };
+
+    const normalized = normalizeContext(huge, undefined);
+
+    expect(normalized?.who).toBe("ada");
+    expect(typeof normalized?.blob).toBe("string");
+    expect(jsonByteLength(normalized)).toBeLessThanOrEqual(MAX_CONTEXT_BYTES);
+  });
+
   it("bounds a wide object with the node budget", () => {
     const wide: Record<string, number> = {};
     for (let index = 0; index < 5000; index += 1) wide[`k${index}`] = index;
@@ -189,6 +257,64 @@ describe("normalizeContext", () => {
   it("ignores non-objects", () => {
     expect(normalizeContext("string", undefined)).toBeUndefined();
     expect(normalizeContext(undefined, undefined)).toBeUndefined();
+  });
+
+  it("bounds a bag of errors without losing the keys beside them", () => {
+    const stack = `Error: failure\n${"    at step (app.js:1:1)\n".repeat(10)}`;
+    const errors = Array.from({ length: 400 }, (_unused, index) =>
+      Object.assign(new Error(`failure ${index}`), { stack }),
+    );
+
+    const normalized = normalizeContext(
+      { request: "GET /checkout", errors },
+      undefined,
+    );
+
+    expect(normalized?.request).toBe("GET /checkout");
+    expect(Array.isArray(normalized?.errors)).toBe(true);
+    expect(jsonByteLength(normalized)).toBeLessThanOrEqual(MAX_CONTEXT_BYTES);
+  });
+
+  it("serializes an error inside a context with its name, message and stack", () => {
+    const failure = new TypeError("bad input");
+
+    expect(normalizeContext({ failure }, undefined)).toEqual({
+      failure: {
+        name: "TypeError",
+        message: "bad input",
+        stack: failure.stack,
+      },
+    });
+  });
+
+  it("walks a plain { message, stack } object as an ordinary object", () => {
+    expect(
+      normalizeContext(
+        { detail: { message: "m", stack: "s", code: 42 } },
+        undefined,
+      ),
+    ).toEqual({ detail: { message: "m", stack: "s", code: 42 } });
+  });
+
+  it("keeps a top-level array within the contract's depth limit", () => {
+    let nested: unknown[] = [true];
+    for (let index = 0; index < 20; index += 1) nested = [nested];
+
+    const normalized = normalizeContext(nested, undefined);
+
+    expect(normalized).toHaveProperty("value");
+    expect(jsonDepth(normalized)).toBeLessThanOrEqual(MAX_CONTEXT_DEPTH);
+  });
+
+  it("keeps a caller's own __proto__ key as a plain property", () => {
+    const normalized = normalizeContext(
+      JSON.parse('{"__proto__":{"x":1},"a":1}'),
+      undefined,
+    );
+
+    expect(Object.hasOwn(normalized ?? {}, "__proto__")).toBe(true);
+    expect(normalized?.a).toBe(1);
+    expect(Object.getPrototypeOf(normalized)).toBe(Object.prototype);
   });
 });
 
@@ -225,5 +351,19 @@ describe("mergeContext", () => {
 
   it("leaves a merge that already fits exactly as it was", () => {
     expect(mergeContext({ a: 1 }, { b: 2 })).toEqual({ a: 1, b: 2 });
+  });
+
+  it("keeps an own __proto__ key when it has to re-merge within budget", () => {
+    const bulky = "x".repeat(MAX_CONTEXT_BYTES * 0.75);
+
+    const merged = mergeContext(
+      { collected: bulky },
+      { static: bulky },
+      JSON.parse('{"__proto__":{"x":1},"kept":true}'),
+    );
+
+    expect(Object.hasOwn(merged ?? {}, "__proto__")).toBe(true);
+    expect(merged?.kept).toBe(true);
+    expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
   });
 });

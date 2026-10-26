@@ -8,26 +8,33 @@ import { config, proxy } from "./proxy";
 /**
  * The proxy is the only thing this app runs ahead of every document request,
  * so the properties pinned here are the ones a regression would quietly cost:
- * WHAT it runs on (never `/api/*`), what it deliberately does NOT do (auth),
- * and where the nonce comes from (here, never the caller).
+ * WHAT it runs on (never `/api/*`, never a router prefetch), what it
+ * deliberately does NOT do (auth), and where the nonce comes from (here, never
+ * the caller).
  *
  * The policy itself is covered by `lib/security/csp.test.ts`.
  */
 
 /**
- * The declared matcher, as a regex.
+ * The declared matcher entry: the path pattern, and the request headers whose
+ * ABSENCE the entry is conditioned on.
+ */
+const matcherEntry = (() => {
+  const [entry] = config.matcher;
+  if (entry === undefined) throw new Error("the proxy declares no matcher");
+
+  return entry;
+})();
+
+/**
+ * The matcher's path pattern, as a regex.
  *
  * Next wraps this same source in optional `_next/data` and `.rsc` suffix groups
  * before matching a pathname against it; the negative lookahead that decides
  * which paths are in scope is the part that lives in this repo, so it is the
  * part tested here.
  */
-const matcher = (() => {
-  const [source] = config.matcher;
-  if (source === undefined) throw new Error("the proxy declares no matcher");
-
-  return new RegExp(`^${source}$`);
-})();
+const matcher = new RegExp(`^${matcherEntry.source}$`);
 
 function requestFor(
   pathname: string,
@@ -66,10 +73,24 @@ describe("the proxy matcher", () => {
     expect(matcher.test("/apps")).toBe(true);
   });
 
-  it("excludes the build output and the favicon", () => {
+  it("excludes the build output, the favicon and the app icon", () => {
     expect(matcher.test("/_next/static/chunk.js")).toBe(false);
     expect(matcher.test("/_next/image")).toBe(false);
     expect(matcher.test("/favicon.ico")).toBe(false);
+    expect(matcher.test("/icon.svg")).toBe(false);
+  });
+
+  it("skips router prefetches, which never become a document", () => {
+    // A prefetch fetches the payload of a route the visitor may never open. A
+    // nonce minted for it would bless nothing, and the policy header would be
+    // attached to a response no browser evaluates as a document. Both request
+    // headers Next sends for a prefetch are named, as its CSP guide advises.
+    expect(matcherEntry.missing).toEqual(
+      expect.arrayContaining([
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ]),
+    );
   });
 });
 

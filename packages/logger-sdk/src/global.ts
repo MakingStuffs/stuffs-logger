@@ -2,6 +2,7 @@ import { captureConsole } from "./capture/console";
 import { captureErrors } from "./capture/errors";
 import { createLogger } from "./browser/index";
 import { SDK_VERSION } from "./defaults";
+import { createDiagnostics } from "./logger/no-throw";
 import type { Logger, LoggerOptions, LogContext } from "./types";
 
 /**
@@ -23,10 +24,13 @@ export interface InitOptions extends LoggerOptions {
 }
 
 let current: Logger | undefined;
+let configured: InitOptions | undefined;
 
 /**
  * Configures the global logger. Calling it again returns the existing logger
- * rather than building a second one.
+ * rather than building a second one; if the second call asked for a different
+ * key or endpoint, its `onError` hook is told that the first configuration is
+ * the one in effect.
  *
  * @param options - Logger configuration and capture switches.
  * @returns The global logger.
@@ -34,10 +38,27 @@ let current: Logger | undefined;
  * StuffsLogger.init({ apiKey: "slg_pub_…" });
  */
 export function init(options: InitOptions): Logger {
-  if (current) return current;
+  if (current) {
+    // Two copies of the snippet on one page is the usual cause, and the
+    // second copy's key and endpoint silently never taking effect is the
+    // kind of mistake that is only found when the logs are needed.
+    if (
+      options.apiKey !== configured?.apiKey ||
+      options.endpoint !== configured?.endpoint
+    ) {
+      createDiagnostics(options.onError)(
+        new Error(
+          "StuffsLogger.init was called more than once; the first configuration is in effect",
+        ),
+        "logger.config",
+      );
+    }
+    return current;
+  }
 
   const logger = createLogger(options);
   current = logger;
+  configured = options;
 
   if (options.captureConsole !== false) captureConsole(logger);
   if (options.captureErrors !== false) captureErrors(logger);

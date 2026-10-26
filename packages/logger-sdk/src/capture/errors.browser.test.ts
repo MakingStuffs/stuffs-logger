@@ -70,6 +70,19 @@ describe("captureErrors in the browser", () => {
     });
   });
 
+  it("redacts a secret-shaped parameter in the failing script's url", () => {
+    window.dispatchEvent(
+      new ErrorEvent("error", {
+        message: "boom",
+        filename: "https://cdn.example.com/app.js?token=abc123",
+      }),
+    );
+
+    expect(captured[0]?.context?.filename).toBe(
+      "https://cdn.example.com/app.js?token=[redacted]",
+    );
+  });
+
   it("records an unhandled rejection", () => {
     const reason = new Error("api call failed");
     const event = Object.assign(new Event("unhandledrejection"), { reason });

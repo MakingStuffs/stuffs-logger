@@ -12,7 +12,7 @@ import {
   DEFAULT_MAX_QUEUE_SIZE,
 } from "../defaults";
 import { createTestAdapter } from "../testing/fixtures";
-import { clampShort, resolveOptions } from "./options";
+import { clampShort, MAX_QUEUE_SIZE_CEILING, resolveOptions } from "./options";
 
 const adapter = createTestAdapter();
 
@@ -60,6 +60,12 @@ describe("resolveOptions", () => {
     expect(resolveOptions({ maxQueueSize: 0 }, adapter).maxQueueSize).toBe(1);
   });
 
+  it("caps the queue at the ceiling rather than allocating whatever was asked for", () => {
+    expect(resolveOptions({ maxQueueSize: 1e10 }, adapter).maxQueueSize).toBe(
+      MAX_QUEUE_SIZE_CEILING,
+    );
+  });
+
   it("allows a zero flush interval, which is not the same as absent", () => {
     expect(
       resolveOptions({ flushIntervalMs: 0 }, adapter).flushIntervalMs,
@@ -68,7 +74,10 @@ describe("resolveOptions", () => {
 
   it("reads the environment when nothing is configured", () => {
     vi.stubGlobal("process", {
-      env: { STUFFS_LOGGER_ENVIRONMENT: "staging", STUFFS_LOGGER_RELEASE: "abc123" },
+      env: {
+        STUFFS_LOGGER_ENVIRONMENT: "staging",
+        STUFFS_LOGGER_RELEASE: "abc123",
+      },
     });
 
     expect(resolveOptions({}, adapter)).toMatchObject({

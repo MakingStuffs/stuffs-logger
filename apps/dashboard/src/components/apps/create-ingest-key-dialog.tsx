@@ -3,7 +3,6 @@
 import { KeyRound, TriangleAlert } from "lucide-react";
 import { useActionState, useState } from "react";
 
-import { createIngestKeyAction } from "@/lib/apps/actions";
 import type { IngestKeyActionResult } from "@/lib/apps/actions";
 import type { IngestKeyType } from "@/lib/ingest/keys";
 
@@ -22,8 +21,27 @@ import { SubmitButton } from "../ui/submit-button";
 import { Textarea } from "../ui/textarea";
 
 import { CopyButton } from "./copy-button";
+import type { IngestKeyAction } from "./ingest-key-action";
 
 const INITIAL_RESULT: IngestKeyActionResult = { status: "idle" };
+
+/**
+ * The most the origin textarea will accept.
+ *
+ * Matches the cap the action's schema enforces on the same field
+ * (`MAX_ORIGINS_INPUT_LENGTH` in `lib/apps/actions.ts`), so the limit is met
+ * in the field rather than reported back after a round trip. The action's
+ * check is the one that counts; this is the courtesy copy.
+ */
+const MAX_ORIGINS_INPUT_LENGTH = 2_000;
+
+/** Props for {@link CreateIngestKeyDialog}. */
+export interface CreateIngestKeyDialogProps {
+  /** The Server Action that mints the key. See {@link IngestKeyAction}. */
+  action: IngestKeyAction;
+  applicationId: string;
+  applicationName: string;
+}
 
 /**
  * Creates an ingest key, and shows it once.
@@ -33,12 +51,10 @@ const INITIAL_RESULT: IngestKeyActionResult = { status: "idle" };
  * component's state, and it disappears with the dialog.
  */
 export function CreateIngestKeyDialog({
+  action,
   applicationId,
   applicationName,
-}: {
-  applicationId: string;
-  applicationName: string;
-}) {
+}: CreateIngestKeyDialogProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -54,6 +70,7 @@ export function CreateIngestKeyDialog({
             memory when it closes. */}
         {open ? (
           <CreateIngestKeyForm
+            action={action}
             applicationId={applicationId}
             applicationName={applicationName}
             onDone={() => setOpen(false)}
@@ -65,16 +82,13 @@ export function CreateIngestKeyDialog({
 }
 
 function CreateIngestKeyForm({
+  action,
   applicationId,
   applicationName,
   onDone,
-}: {
-  applicationId: string;
-  applicationName: string;
-  onDone: () => void;
-}) {
+}: CreateIngestKeyDialogProps & { onDone: () => void }) {
   const [result, formAction, isPending] = useActionState(
-    createIngestKeyAction,
+    action,
     INITIAL_RESULT,
   );
   const [type, setType] = useState<IngestKeyType>("PUBLIC");
@@ -147,6 +161,7 @@ function CreateIngestKeyForm({
             id="key-origins"
             name="allowedOrigins"
             rows={4}
+            maxLength={MAX_ORIGINS_INPUT_LENGTH}
             placeholder={
               "https://www.example.com\nhttps://checkout.example.com"
             }

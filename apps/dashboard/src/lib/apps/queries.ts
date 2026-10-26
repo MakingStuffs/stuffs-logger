@@ -4,7 +4,16 @@ import { z } from "zod";
 import { assertActiveViewer, assertAdminViewer } from "@/lib/access";
 import type { AppSession } from "@/lib/auth/types";
 import { prisma } from "@/lib/db";
+import {
+  DAILY_BYTE_QUOTA,
+  DAILY_EVENT_QUOTA,
+  utcDayStart,
+} from "@/lib/ingest/quota";
 import type { ApplicationSummary, IngestKeySummary } from "@/lib/logs/dto";
+
+import type { ApplicationUsageToday } from "./dto";
+import { MAX_APPLICATION_SLUG_LENGTH } from "./limits";
+import { APPLICATION_SLUG_PATTERN } from "./slug";
 
 /**
  * Application and ingest-key reads.
@@ -48,6 +57,12 @@ const INGEST_KEY_SELECT = {
   createdAt: true,
 } as const satisfies Prisma.IngestKeySelect;
 
+/** The day's counters, and nothing else from the usage row. */
+const APPLICATION_USAGE_SELECT = {
+  eventCount: true,
+  byteCount: true,
+} as const satisfies Prisma.ApplicationUsageSelect;
+
 type ApplicationRow = Prisma.ApplicationGetPayload<{
   select: typeof APPLICATION_SELECT;
 }>;
@@ -55,14 +70,20 @@ type IngestKeyRow = Prisma.IngestKeyGetPayload<{
   select: typeof INGEST_KEY_SELECT;
 }>;
 
-/** URL-safe slug: the only shape a route param may take. */
+/**
+ * URL-safe slug: the only shape a route param may take, and the only shape
+ * the create action will store.
+ *
+ * Built from the pattern in `./slug.ts` so the create dialog's client-side
+ * suggestion and this check cannot drift apart.
+ */
 export const applicationSlugSchema = z
   .string()
   .trim()
-  .min(1)
-  .max(64)
+  .min(1, "Give the application a slug.")
+  .max(MAX_APPLICATION_SLUG_LENGTH)
   .regex(
-    /^[a-z0-9][a-z0-9-]*$/,
+    APPLICATION_SLUG_PATTERN,
     "Slug must be lowercase alphanumeric with hyphens",
   );
 
@@ -158,4 +179,43 @@ export async function listIngestKeys(
   });
 
   return rows.map(toIngestKeySummary);
+}
+
+/**
+ * One application's ingest volume for the current UTC day.
+ *
+ * A READ, gated like every other application read: the counters say how busy
+ * an application is, not how to write to it, so any live account may see
+ * them. A day with no row yet is reported as zero rather than as missing —
+ * the ingest endpoint creates the row on the first batch, and "nothing sent
+ * yet today" is the honest reading of its absence.
+ *
+ * @param session - The resolved session of the user asking.
+ * @param applicationId - The application whose counters to read.
+ * @param now - The clock, injected for tests.
+ * @returns Today's counters beside the ceilings they are measured against.
+ */
+export async function getApplicationUsageToday(
+  session: AppSession,
+  applicationId: string,
+  now: Date = new Date(),
+): Promise<ApplicationUsageToday> {
+  assertActiveViewer(session);
+
+  const day = utcDayStart(now);
+
+  const row = await prisma.applicationUsage.findUnique({
+    where: { applicationId_day: { applicationId, day } },
+    select: APPLICATION_USAGE_SELECT,
+  });
+
+  return {
+    day: day.toISOString().slice(0, "YYYY-MM-DD".length),
+    eventCount: row?.eventCount ?? 0,
+    // Safe as a number: the byte ceiling is 1 GiB, far inside 2^53, and a
+    // BigInt could not be serialised to the client component that renders it.
+    byteCount: Number(row?.byteCount ?? 0),
+    eventQuota: DAILY_EVENT_QUOTA,
+    byteQuota: DAILY_BYTE_QUOTA,
+  };
 }

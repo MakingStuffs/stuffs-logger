@@ -73,10 +73,8 @@ export function assertAdminViewer(session: AppSession): void {
   assertActiveViewer(session);
 
   if (!isAdminUser(session)) {
-    throw new ApiError(
-      "FORBIDDEN",
-      "Only an administrator can manage ingest keys.",
-      { logContext: `non-admin user ${session.user.id} refused` },
-    );
+    throw new ApiError("FORBIDDEN", "Only an administrator can do this.", {
+      logContext: `non-admin user ${session.user.id} refused`,
+    });
   }
 }

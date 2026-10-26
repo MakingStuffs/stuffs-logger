@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { MAX_EVENTS_PER_BATCH } from "../contract";
-import { MAX_RETRY_DELAY_MS, MAX_SEND_ATTEMPTS } from "../defaults";
+import {
+  MAX_RETRY_DELAY_MS,
+  MAX_SEND_ATTEMPTS,
+  MIN_RETRY_DELAY_MS,
+} from "../defaults";
 import { createFailurePolicy } from "./failure-policy";
 
 const NOW = 1_767_000_000_000;
@@ -47,6 +51,14 @@ describe("createFailurePolicy", () => {
     expect(policy.recordFailure(30_000, NOW).retryInMs).toBe(30_000);
     expect(policy.waitMs(NOW)).toBe(30_000);
     expect(policy.waitMs(NOW + 30_000)).toBe(0);
+  });
+
+  it("never lets a Retry-After shorten its own backoff", () => {
+    const policy = createFailurePolicy();
+
+    expect(policy.recordFailure(0, NOW).retryInMs).toBe(MIN_RETRY_DELAY_MS);
+    expect(policy.waitMs(NOW)).toBe(MIN_RETRY_DELAY_MS);
+    expect(policy.recordFailure(0, NOW).retryInMs).toBe(MIN_RETRY_DELAY_MS * 2);
   });
 
   it("gives up on a batch once the attempts are exhausted", () => {

@@ -1,5 +1,9 @@
 import { KeyRound } from "lucide-react";
 
+import {
+  createIngestKeyAction,
+  revokeIngestKeyAction,
+} from "@/lib/apps/actions";
 import type { ApplicationSummary, IngestKeySummary } from "@/lib/logs/dto";
 
 import { EMPTY_VALUE, formatUtcTimestampLong } from "../logs/format";
@@ -31,6 +35,13 @@ import { RevokeIngestKeyDialog } from "./revoke-ingest-key-dialog";
  * gated on the same check, so a viewer who got as far as rendering this
  * section is entitled to its contents. The refusal is the whole PAGE's, and
  * lives there.
+ *
+ * THE ACTIONS ARE IMPORTED HERE, in a server component, and handed to the
+ * client dialogs as props. Imported from the `"use client"` dialogs instead,
+ * `lib/apps/actions.ts` would sit on the client module graph, where webpack
+ * compiles a second copy of it — and of the database client and the auth
+ * instance it reaches — into this route's server bundle beside the page's own.
+ * One import site, on this side of the boundary, keeps it to one copy.
  */
 export function IngestKeysSection({
   application,
@@ -54,6 +65,7 @@ export function IngestKeysSection({
           </p>
         </div>
         <CreateIngestKeyDialog
+          action={createIngestKeyAction}
           applicationId={application.id}
           applicationName={application.name}
         />
@@ -154,6 +166,7 @@ function IngestKeyRow({ ingestKey }: { ingestKey: IngestKeySummary }) {
       <TableCell className="text-right">
         {isRevoked ? null : (
           <RevokeIngestKeyDialog
+            action={revokeIngestKeyAction}
             keyId={ingestKey.id}
             keyName={ingestKey.name}
           />

@@ -14,10 +14,7 @@ describe("resolveAccess", () => {
 
   it("turns the gate's refusal of a non-administrator into an outcome", async () => {
     const outcome = await resolveAccess(() => {
-      throw new ApiError(
-        "FORBIDDEN",
-        "Only an administrator can manage ingest keys.",
-      );
+      throw new ApiError("FORBIDDEN", "Only an administrator can do this.");
     });
 
     expect(outcome).toEqual({ allowed: false, code: "FORBIDDEN" });
@@ -51,13 +48,13 @@ describe("resolveAccess", () => {
 });
 
 describe("AccessRefused", () => {
-  it("tells a member that key management is closed, not broken", () => {
+  it("tells a member that administration is closed, not broken", () => {
     render(<AccessRefused code="FORBIDDEN" />);
 
     expect(
       screen.getByRole("heading", { name: "Administrators only" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/live write credential/i)).toBeInTheDocument();
+    expect(screen.getByText(/issues a live credential/i)).toBeInTheDocument();
   });
 
   it("does not suggest a member has lost access to the logs they can still read", () => {

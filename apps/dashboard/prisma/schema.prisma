@@ -132,10 +132,12 @@ model IngestKey {
 
   // Listing an application's keys in the management UI.
   @@index([applicationId])
-  // The CORS preflight asks "does any live public key allow this origin?",
-  // which is a containment test over an array column. Without a GIN index that
-  // is a sequential scan, on an UNAUTHENTICATED path.
-  @@index([allowedOrigins(ops: ArrayOps)], type: Gin)
+  // There is deliberately NO index on `allowedOrigins`. The CORS preflight
+  // reads the union of every live public key's origins in one query filtered
+  // on `type` and `revokedAt` (see `listRegisteredOrigins`), caches it, and
+  // tests containment in memory — nothing ever asks Postgres "which keys
+  // contain this origin". A GIN index on the column existed for that query
+  // shape and was never used; the table is a handful of rows.
   @@map("ingest_keys")
 }
 
@@ -155,23 +157,36 @@ model IngestKey {
 ///    place ahead of the timestamp because it is an equality/IN predicate.
 ///  - `(applicationId, environment, timestamp DESC)` — the second most common
 ///    refinement, and the one that must stay fast when production traffic
-///    dwarfs staging.
+///    dwarfs staging. Also the index `listEnvironments` walks as a LOOSE
+///    index scan (one probe per distinct environment) to fill the filter
+///    dropdown, which is why `environment` sits directly after the
+///    application.
 ///  - `(timestamp DESC, id DESC)` — the UNFILTERED explorer, which is the
 ///    landing view and therefore the most-run query of the lot: no
 ///    application, no level, `ORDER BY timestamp DESC, id DESC LIMIT n`. Every
 ///    other index here is applicationId-leading and cannot serve it, so
 ///    without this one the default page is a sequential scan plus a Top-N sort
 ///    over the whole table. The `id` tie-break is part of the index because it
-///    is part of the ordering the cursor pagination depends on.
-///  - `(receivedAt)` — the retention sweep's only predicate. It deliberately
-///    uses the SERVER clock, not the client one: a client that reports an old
-///    timestamp must not be able to make its rows immortal or delete them
-///    early.
+///    is the second half of the KEYSET cursor: a page bound of
+///    `(timestamp, id) < (cursor.ts, cursor.id)` seeks straight into it.
+///  - `(receivedAt)` — the retention sweep's only predicate, and the
+///    overview's 24-hour activity window. Both deliberately use the SERVER
+///    clock, not the client one: a client that reports an old timestamp must
+///    not be able to make its rows immortal or delete them early, and the
+///    overview counts what was RECEIVED in the last day.
 ///
 /// Source, deviceType, sessionId and free-text message search have no index of
 /// their own on purpose: they are always applied on top of an application and
 /// time window, which the indexes above have already narrowed to a page's
-/// worth of rows.
+/// worth of rows. A search with no window of its own is given the last 24
+/// hours by the filter validator for exactly this reason.
+///
+/// STORAGE PARAMETERS, which Prisma does not model: migration
+/// `20261022170000_retention_vacuum_and_drop_unused_gin` lowers this table's
+/// `autovacuum_vacuum_scale_factor` and `autovacuum_vacuum_insert_scale_factor`.
+/// Retention deletes land at the oldest end and inserts at the newest, so the
+/// defaults would let ~1M dead tuples accumulate before a vacuum and cost the
+/// stream its index-only scans. If the table is ever recreated, carry them.
 model LogEvent {
   id            String      @id @default(cuid())
   applicationId String

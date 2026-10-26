@@ -19,10 +19,17 @@ const SAFE_PROTOCOLS = new Set(["http:", "https:"]);
  * a protocol-relative `//evil.test` — are all resolved before the scheme is
  * examined.
  *
+ * Userinfo is refused outright. `https://evil.test@victim.test/` reads, as
+ * link text, like a link to `evil.test` and goes to `victim.test` — or the
+ * reverse, which is the trick — and nothing a log event legitimately links to
+ * needs credentials in the URL.
+ *
  * @param value - The `url` field of a log event. Attacker-controlled.
- * @returns The URL when its scheme is `http` or `https`, otherwise `null`.
+ * @returns The URL when its scheme is `http` or `https` and it carries no
+ *   userinfo, otherwise `null`.
  * @example
  * toSafeHttpUrl("javascript:alert(1)"); // null
+ * toSafeHttpUrl("https://evil.test@victim.test/"); // null
  * toSafeHttpUrl("https://example.test/checkout"); // the URL
  */
 export function toSafeHttpUrl(value: string | null | undefined): string | null {
@@ -41,5 +48,8 @@ export function toSafeHttpUrl(value: string | null | undefined): string | null {
     return null;
   }
 
-  return SAFE_PROTOCOLS.has(parsed.protocol) ? parsed.toString() : null;
+  if (!SAFE_PROTOCOLS.has(parsed.protocol)) return null;
+  if (parsed.username.length > 0 || parsed.password.length > 0) return null;
+
+  return parsed.toString();
 }

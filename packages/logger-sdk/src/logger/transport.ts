@@ -1,4 +1,4 @@
-import { INGEST_KEY_HEADER, jsonByteLength, MAX_BODY_BYTES } from "../contract";
+import { INGEST_KEY_HEADER, MAX_BODY_BYTES } from "../contract";
 import { MAX_KEEPALIVE_BODY_BYTES } from "../defaults";
 import type {
   DiagnosticHandler,
@@ -28,6 +28,15 @@ const REQUEST_TIMEOUT_MS = 10000;
 
 /** Ceiling applied to a server-supplied `Retry-After`, in milliseconds. */
 const MAX_RETRY_AFTER_MS = 300000;
+
+/** One encoder for every send: the body is encoded once, measured, then sent. */
+const encoder = new TextEncoder();
+
+/** The part of the dashboard's `202` envelope the transport reads. */
+interface IngestReceipt {
+  accepted?: unknown;
+  rejected?: unknown;
+}
 
 /** Everything the HTTP transport needs to talk to one ingest endpoint. */
 export interface HttpTransportOptions {
@@ -105,6 +114,41 @@ function classify(response: Response): TransportOutcome {
 }
 
 /**
+ * How many events the server actually wrote.
+ *
+ * A `202` means the batch was taken in, not that every event in it survived
+ * validation: the dashboard answers `{ success, data: { accepted, rejected } }`
+ * and an event it refused is as lost as one that never arrived — so it is
+ * reported, and not counted as sent. Anything other than that envelope (an
+ * empty body, a proxy's page) falls back to the batch size, because the
+ * status already said the batch landed.
+ */
+async function countAccepted(
+  response: Response,
+  fallback: number,
+  report: DiagnosticHandler,
+): Promise<number> {
+  let receipt: IngestReceipt | undefined;
+  try {
+    receipt = ((await response.json()) as { data?: IngestReceipt } | null)
+      ?.data;
+  } catch {
+    return fallback;
+  }
+
+  const rejected = receipt?.rejected;
+  if (typeof rejected === "number" && rejected > 0) {
+    report(
+      new Error(`ingest rejected ${rejected} event(s)`),
+      "transport.rejected",
+    );
+  }
+
+  const accepted = receipt?.accepted;
+  return typeof accepted === "number" ? accepted : fallback;
+}
+
+/**
  * Builds the transport used unless the caller injects their own.
  *
  * @param options - Endpoint, key and diagnostics sink.
@@ -115,21 +159,24 @@ export function createHttpTransport(options: HttpTransportOptions): Transport {
 
   return {
     async send({ batch, urgent }: TransportRequest): Promise<TransportOutcome> {
-      let body: string;
+      // Serialized and encoded ONCE. The bytes are what the server measures
+      // and what the browser's keepalive cap counts — a UTF-16 length would
+      // let a batch of CJK text through at three times the real size, to be
+      // refused with a `413` this transport can only read as "condemned" —
+      // and the same bytes are then what goes on the wire, so nothing is
+      // stringified or encoded a second time.
+      let body: ReturnType<TextEncoder["encode"]>;
       try {
-        body = JSON.stringify(batch);
+        body = encoder.encode(JSON.stringify(batch));
       } catch (error) {
         report(error, "transport.serialize");
         return { kind: "dropped", reason: "batch could not be serialized" };
       }
 
-      // Measured in UTF-8 BYTES, which is what the server measures and what
-      // the browser's keepalive cap counts. A UTF-16 length would let a batch
-      // of CJK text through at three times the real size, to be refused with a
-      // `413` this transport can only read as "condemned". The caller sizes
-      // batches to the same budget, so reaching this guard means one event
-      // alone is too big — the last resort, not the routine path.
-      const bytes = jsonByteLength(batch);
+      // The caller sizes batches to the same budget, so reaching this guard
+      // means one event alone is too big — the last resort, not the routine
+      // path.
+      const bytes = body.length;
       const limit = urgent ? MAX_KEEPALIVE_BODY_BYTES : MAX_BODY_BYTES;
       if (bytes > limit) {
         // Only the keepalive cap refused it, and that cap is four times
@@ -161,6 +208,12 @@ export function createHttpTransport(options: HttpTransportOptions): Transport {
           // the application never intended to authenticate against.
           credentials: "omit",
           cache: "no-store",
+          // A redirect would be followed with the key header still attached,
+          // to whichever origin the redirect named. The ingest endpoint does
+          // not redirect, so one is a misconfiguration or an interception;
+          // either way the key stays home. The resulting TypeError is retried
+          // like any other failed fetch.
+          redirect: "error",
           keepalive: urgent,
           headers: {
             "content-type": "application/json",
@@ -171,7 +224,14 @@ export function createHttpTransport(options: HttpTransportOptions): Transport {
         });
 
         if (response.ok) {
-          return { kind: "sent", accepted: batch.events.length };
+          return {
+            kind: "sent",
+            accepted: await countAccepted(
+              response,
+              batch.events.length,
+              report,
+            ),
+          };
         }
         return classify(response);
       } catch (error) {

@@ -43,7 +43,7 @@ export function resolveTransport(
     return undefined;
   }
 
-  const endpoint = resolveEndpoint(options.endpoint);
+  const endpoint = resolveEndpoint(options.endpoint, report);
   if (!endpoint) {
     report(new Error("no ingest endpoint could be resolved"), "logger.config");
     return undefined;

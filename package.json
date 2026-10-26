@@ -3,22 +3,45 @@
   "version": "0.1.0",
   "private": true,
   "description": "Self-hosted logging platform: cross-platform TypeScript SDK plus a Next.js dashboard.",
+  "license": "MIT",
+  "author": "MakingStuffs",
+  "homepage": "https://github.com/MakingStuffs/stuffs-logger#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MakingStuffs/stuffs-logger.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MakingStuffs/stuffs-logger/issues"
+  },
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm --filter @stuffs-logger/dashboard dev",
-    "lint": "pnpm -r lint",
+    "lint": "eslint scripts && pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "vitest run && pnpm -r test",
+    "test:unit": "pnpm run test",
+    "test:e2e": "pnpm --filter @stuffs-logger/core --filter @stuffs-logger/sdk build && pnpm --filter @stuffs-logger/dashboard test:e2e",
+    "test:smoke": "pnpm --filter @stuffs-logger/dashboard test:smoke",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "release": "semantic-release",
+    "release:dry-run": "semantic-release --dry-run --no-ci",
+    "release:verify-pack": "pnpm --filter @stuffs-logger/core --filter @stuffs-logger/sdk build && node scripts/verify-pack.mjs",
+    "version:sync": "node scripts/sync-versions.mjs"
   },
   "devDependencies": {
-    "prettier": "^3.6.2",
-    "typescript": "^6.0.3",
+    "@eslint/js": "^9.39.5",
+    "@semantic-release/changelog": "^7.0.0",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^11.0.1",
+    "conventional-changelog-conventionalcommits": "^10.4.1",
     "eslint": "^9.39.5",
-    "typescript-eslint": "^8.64.0",
     "globals": "^16.5.0",
-    "@eslint/js": "^9.39.5"
+    "prettier": "^3.9.10",
+    "semantic-release": "^25.0.9",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^4.1.12"
   },
   "packageManager": "pnpm@11.22.0",
   "engines": {

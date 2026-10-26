@@ -58,6 +58,16 @@ describe("buildContentSecurityPolicy", () => {
     expect(policy).not.toContain("  ");
   });
 
+  it("allows no external image host", () => {
+    // Nothing on the dashboard renders an image from elsewhere — avatars are
+    // initials — so an `https:` allowance was only a channel for an injected
+    // element to beacon out through an image request.
+    const policy = buildContentSecurityPolicy("abc123");
+
+    expect(directive(policy, "img-src")).toBe("img-src 'self' data: blob:");
+    expect(directive(policy, "img-src")).not.toContain("https:");
+  });
+
   it("does not restrict a wildcard script host", () => {
     const policy = buildContentSecurityPolicy("abc123");
 

@@ -1,4 +1,4 @@
-import type { LogLevel } from "@stuffs-logger/core";
+import type { LogLevel } from "@stuffs-logger/core/taxonomy";
 
 import { Badge } from "../ui/badge";
 

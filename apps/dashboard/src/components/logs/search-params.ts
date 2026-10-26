@@ -1,6 +1,6 @@
-import type { LogLevel } from "@stuffs-logger/core";
+import type { LogLevel } from "@stuffs-logger/core/taxonomy";
 
-import { DEFAULT_PAGE_SIZE } from "@/lib/logs/filters";
+import { DEFAULT_PAGE_SIZE } from "@/lib/logs/constants";
 import type { LogFilters, RawSearchParams } from "@/lib/logs/filters";
 
 /**
@@ -79,9 +79,23 @@ export function buildLogsHref(filters: Partial<LogFilters>): string {
   appendAll("source", filters.source);
   appendAll("deviceType", filters.deviceType);
   appendAll("environment", filters.environment);
-  appendScalar("from", filters.from?.toISOString());
+  // A `from` the validator defaulted (an unbounded search's window) is not
+  // the user's choice, so it is not written into links: the next page and the
+  // "newest" link re-derive it, and a shared URL is not pinned to the minute
+  // someone happened to search. Between pages the window slides with the
+  // clock, which only ever trims its oldest edge.
+  appendScalar(
+    "from",
+    filters.fromDefaulted === true ? undefined : filters.from?.toISOString(),
+  );
   appendScalar("to", filters.to?.toISOString());
   appendScalar("search", filters.search);
+  // Carried only while it means something: an explicit "no window" is a
+  // statement about a search, and a link with no search has nothing to say.
+  appendScalar(
+    "window",
+    filters.search === undefined ? undefined : filters.window,
+  );
   appendScalar("cursor", filters.cursor);
 
   if (filters.limit !== undefined && filters.limit !== DEFAULT_PAGE_SIZE) {
@@ -128,7 +142,19 @@ export function timeRangeHref(
   filters: LogFilters,
   from: Date | undefined,
 ): string {
-  return buildLogsHref({ ...filters, from, cursor: undefined });
+  // A quick-range IS the user's choice of lower bound, so it must not be
+  // dropped as a defaulted one would be. "All time" is the same kind of
+  // choice in the other direction: with a search active it would otherwise be
+  // silently replaced by the default window, so it says `window=all` instead
+  // of merely omitting `from`. Any bounded range clears that again.
+  return buildLogsHref({
+    ...filters,
+    from,
+    fromDefaulted: undefined,
+    window:
+      from === undefined && filters.search !== undefined ? "all" : undefined,
+    cursor: undefined,
+  });
 }
 
 /**
@@ -168,5 +194,22 @@ export function hasActiveFilters(filters: LogFilters): boolean {
     filters.from !== undefined ||
     filters.to !== undefined ||
     filters.search !== undefined
+  );
+}
+
+/**
+ * Whether a filter from the collapsed "More filters" section is applied.
+ *
+ * Decides whether that section opens on render — and, because the panel is
+ * streamed, whether its skeleton reserves the open height or the closed one.
+ *
+ * @param filters - The filters currently applied.
+ * @returns Whether a source, device or environment filter is set.
+ */
+export function hasSecondaryFilter(filters: LogFilters): boolean {
+  return (
+    filters.source !== undefined ||
+    filters.deviceType !== undefined ||
+    filters.environment !== undefined
   );
 }

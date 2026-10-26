@@ -83,12 +83,16 @@ export function createFailurePolicy(): FailurePolicy {
     ): FailureDecision {
       consecutiveFailures += 1;
 
+      // The server's delay is a floor on top of ours, never a replacement for
+      // it: `Retry-After` exists to make a client wait LONGER, and a
+      // `Retry-After: 0` honoured literally spent every attempt a batch had
+      // in the same millisecond.
+      const backoff = Math.min(
+        MAX_RETRY_DELAY_MS,
+        MIN_RETRY_DELAY_MS * 2 ** (consecutiveFailures - 1),
+      );
       const retryInMs =
-        retryAfterMs ??
-        Math.min(
-          MAX_RETRY_DELAY_MS,
-          MIN_RETRY_DELAY_MS * 2 ** (consecutiveFailures - 1),
-        );
+        retryAfterMs === undefined ? backoff : Math.max(retryAfterMs, backoff);
       nextAttemptAt = now + retryInMs;
 
       return { requeue: consecutiveFailures < MAX_SEND_ATTEMPTS, retryInMs };

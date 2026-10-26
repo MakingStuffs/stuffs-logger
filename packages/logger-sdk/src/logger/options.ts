@@ -30,6 +30,17 @@ const RELEASE_ENV_VAR = "STUFFS_LOGGER_RELEASE";
 /** Environment variable consulted when no `environment` option is given. */
 const ENVIRONMENT_ENV_VAR = "STUFFS_LOGGER_ENVIRONMENT";
 
+/**
+ * Hard ceiling on `maxQueueSize`.
+ *
+ * The queue is a preallocated ring, so the option is a memory allocation made
+ * on the caller's behalf. Above this it stops being a buffer and becomes a
+ * leak with a name — and `new Array(1e10)` never gets that far anyway: it
+ * throws, from inside `createLogger`, which is the one place a throw breaks
+ * the promise the whole SDK is built on.
+ */
+export const MAX_QUEUE_SIZE_CEILING = 100_000;
+
 /** The settled configuration one logger instance runs on. */
 export interface ResolvedOptions {
   /** What batches from this logger are attributed to. */
@@ -93,7 +104,7 @@ export function resolveOptions(
   const maxQueueSize = clampInteger(
     options.maxQueueSize,
     1,
-    Number.MAX_SAFE_INTEGER,
+    MAX_QUEUE_SIZE_CEILING,
     DEFAULT_MAX_QUEUE_SIZE,
   );
 

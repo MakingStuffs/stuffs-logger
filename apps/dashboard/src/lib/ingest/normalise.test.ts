@@ -1,12 +1,28 @@
 import {
   DEFAULT_REDACTION_REPLACEMENT,
+  EMPTY_MESSAGE_PLACEHOLDER,
   MAX_CLOCK_SKEW_FUTURE_MS,
   MAX_CLOCK_SKEW_PAST_MS,
+  parseLogEvent,
   type IngestEnvelope,
+  type JsonValue,
 } from "@stuffs-logger/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { normaliseBatch } from "./normalise";
+import { ApiError } from "@/lib/api/errors";
+
+import { normaliseBatch, UNKNOWN_ENVIRONMENT } from "./normalise";
+
+/**
+ * The validator is the one collaborator mocked here, and only so one test
+ * can make it THROW — the real one never does, which is exactly why the guard
+ * around it cannot be exercised any other way. Every other export keeps its
+ * real implementation.
+ */
+vi.mock("@stuffs-logger/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@stuffs-logger/core")>();
+  return { ...actual, parseLogEvent: vi.fn(actual.parseLogEvent) };
+});
 
 const RECEIVED_AT = new Date("2026-09-01T12:00:00.000Z");
 
@@ -14,6 +30,13 @@ const RECEIVED_AT = new Date("2026-09-01T12:00:00.000Z");
 const ESC = String.fromCodePoint(0x1b);
 const NUL = String.fromCodePoint(0x00);
 const RIGHT_TO_LEFT_OVERRIDE = String.fromCodePoint(0x202e);
+
+/** A context nested far past what any recursive walk survives. */
+function stackBreakingContext(): Record<string, JsonValue> {
+  let node: JsonValue = [1];
+  for (let level = 0; level < 5000; level += 1) node = [node];
+  return { deep: node };
+}
 
 const CONTEXT = {
   applicationId: "app-1",
@@ -114,6 +137,47 @@ describe("normaliseBatch", () => {
 
       expect(result.rows).toHaveLength(0);
       expect(result.rejected).toHaveLength(1);
+    });
+
+    it("rejects an event whose validator throws instead of failing the batch", () => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      vi.mocked(parseLogEvent).mockImplementationOnce(() => {
+        throw new RangeError("Maximum call stack size exceeded");
+      });
+      const events = [validEvent(), validEvent(), validEvent()];
+
+      const result = normaliseBatch(makeEnvelope(events), CONTEXT);
+
+      expect(result.rows).toHaveLength(2);
+      expect(result.rejected).toEqual([
+        {
+          index: 0,
+          issues: [{ path: "", message: "event could not be validated" }],
+        },
+      ]);
+    });
+
+    it("lets a deliberate ApiError from the validator through", () => {
+      const refusal = new ApiError("VALIDATION_FAILED", "refused on purpose");
+      vi.mocked(parseLogEvent).mockImplementationOnce(() => {
+        throw refusal;
+      });
+
+      expect(() =>
+        normaliseBatch(makeEnvelope([validEvent()]), CONTEXT),
+      ).toThrow(refusal);
+    });
+
+    it("rejects, rather than crashes on, a context nested thousands of levels deep", () => {
+      const events = [
+        validEvent({ context: stackBreakingContext() }),
+        validEvent(),
+      ];
+
+      const result = normaliseBatch(makeEnvelope(events), CONTEXT);
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.rejected.map((entry) => entry.index)).toEqual([0]);
     });
   });
 
@@ -337,6 +401,62 @@ describe("normaliseBatch", () => {
       );
 
       expect(result.rows[0]?.context).toEqual({ note: "ab", count: 2 });
+    });
+
+    it("stores the placeholder for a message that sanitises to nothing", () => {
+      const result = normaliseBatch(
+        makeEnvelope([validEvent({ message: `${ESC}[31m${NUL}${ESC}[0m` })]),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.message).toBe(EMPTY_MESSAGE_PLACEHOLDER);
+    });
+
+    it("strips a bidi override from the environment label", () => {
+      const result = normaliseBatch(
+        makeEnvelope([validEvent()], {
+          environment: `prod${RIGHT_TO_LEFT_OVERRIDE}uction`,
+        }),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.environment).toBe("production");
+    });
+
+    it("strips escapes and NULs from the release and session labels", () => {
+      const result = normaliseBatch(
+        makeEnvelope([validEvent()], {
+          release: `${ESC}[31mv1.2.3${ESC}[0m`,
+          sessionId: `sess${NUL}-1`,
+        }),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]).toMatchObject({
+        release: "v1.2.3",
+        sessionId: "sess-1",
+      });
+    });
+
+    it("falls back to the unknown environment when the label sanitises to nothing", () => {
+      const result = normaliseBatch(
+        makeEnvelope([validEvent()], { environment: `${NUL}${NUL}` }),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]?.environment).toBe(UNKNOWN_ENVIRONMENT);
+    });
+
+    it("stores an optional label that sanitises to nothing as absent", () => {
+      const result = normaliseBatch(
+        makeEnvelope([validEvent()], {
+          release: `${ESC}[0m`,
+          sessionId: NUL,
+        }),
+        CONTEXT,
+      );
+
+      expect(result.rows[0]).toMatchObject({ release: null, sessionId: null });
     });
   });
 });

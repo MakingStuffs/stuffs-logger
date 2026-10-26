@@ -1,9 +1,37 @@
 {
   "name": "@stuffs-logger/sdk",
   "version": "0.1.0",
-  "private": true,
+  "description": "Cross-platform logging client for stuffs-logger: browser, Node and <script> builds with batching, redaction and console capture.",
+  "keywords": [
+    "logging",
+    "logger",
+    "observability",
+    "error-tracking",
+    "console",
+    "browser",
+    "node",
+    "sdk",
+    "stuffs-logger"
+  ],
+  "license": "MIT",
+  "author": "MakingStuffs",
+  "homepage": "https://github.com/MakingStuffs/stuffs-logger/tree/main/packages/logger-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MakingStuffs/stuffs-logger.git",
+    "directory": "packages/logger-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/MakingStuffs/stuffs-logger/issues"
+  },
   "type": "module",
+  "sideEffects": [
+    "./dist/stuffs-logger.global.js"
+  ],
   "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "browser": "./dist/browser.js",
+  "unpkg": "./dist/stuffs-logger.global.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
@@ -46,9 +74,16 @@
         "default": "./dist/node.cjs"
       }
     },
-    "./global": "./dist/stuffs-logger.global.js",
     "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup && node ./scripts/build-global.mjs",
     "lint": "eslint . --config ../../eslint.config.mjs",
@@ -60,17 +95,12 @@
     "@stuffs-logger/core": "workspace:*"
   },
   "devDependencies": {
-    "jsdom": "^30.0.1",
-    "tsup": "^8.5.0",
+    "jsdom": "^30.1.3",
+    "tsup": "^8.5.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.12"
   },
-  "module": "./dist/index.js",
-  "browser": "./dist/browser.js",
-  "unpkg": "./dist/stuffs-logger.global.js",
-  "sideEffects": false,
-  "files": [
-    "dist",
-    "README.md"
-  ]
+  "engines": {
+    "node": ">=22"
+  }
 }

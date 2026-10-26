@@ -33,25 +33,49 @@ const epochMillisSchema = z
 
 const shortTextSchema = z.string().min(1).max(MAX_SHORT_FIELD_LENGTH);
 
+/** Whether a value is a non-null, non-array object — what a record parse accepts. */
+function isObjectLike(value: unknown): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * A free-form context bag.
  *
- * Bounded on both size and nesting: `MAX_CONTEXT_BYTES` stops a caller
- * inflating a row, and `MAX_CONTEXT_DEPTH` stops a deeply nested value from
- * turning every later `JSON.stringify` in the read path into a stack overflow.
+ * Bounded on both size and nesting, and checked IN A FIXED ORDER, because the
+ * value is attacker-supplied and most of the tools that inspect it recurse:
+ *
+ *   1. it must be an object — cheap, and everything after assumes it;
+ *   2. `jsonDepth` must be within `MAX_CONTEXT_DEPTH` — that walk is
+ *      iterative, so it is the one check that is safe on a value nested
+ *      thousands of levels deep;
+ *   3. only then `jsonByteLength`, whose `JSON.stringify` is recursive in V8
+ *      and overflows the stack on exactly the input step 2 refuses;
+ *   4. only then the real `z.record(z.string(), z.json())` parse, which walks
+ *      the lazy recursive JSON union and overflows the same way.
+ *
+ * Each refinement aborts on failure and `.pipe` never runs its target once
+ * the input carries an issue, so a hostile depth is refused at step 2 and
+ * never reaches a recursive walk. The obvious shape — refine AFTER the record
+ * parse — ran the checks too late: zod walked the union first and threw a
+ * `RangeError` out of `safeParse`, turning a bad request into a 500.
  */
 const contextSchema = z
-  // `z.json()` rather than `z.unknown()`: the value is persisted into a JSONB
-  // column, so the static type must actually be JSON-representable. With
-  // `unknown` the compiler would happily accept a value the driver cannot
-  // serialise, and the failure would surface at the database instead of here.
-  .record(z.string(), z.json())
+  .unknown()
+  .refine(isObjectLike, { message: "context must be an object", abort: true })
   .refine((value) => jsonDepth(value, MAX_CONTEXT_DEPTH) <= MAX_CONTEXT_DEPTH, {
     message: `context must not nest more than ${MAX_CONTEXT_DEPTH} levels deep`,
+    abort: true,
   })
   .refine((value) => jsonByteLength(value) <= MAX_CONTEXT_BYTES, {
     message: `context must serialise to at most ${MAX_CONTEXT_BYTES} bytes`,
-  });
+    abort: true,
+  })
+  // `z.json()` rather than `z.unknown()` for the piped output: the value is
+  // persisted into a JSONB column, so the static type must actually be
+  // JSON-representable. With `unknown` the compiler would happily accept a
+  // value the driver cannot serialise, and the failure would surface at the
+  // database instead of here.
+  .pipe(z.record(z.string(), z.json()));
 
 /** The serialised error attached to an event. */
 export const logErrorSchema = z.strictObject({
@@ -150,6 +174,13 @@ export type LogEventParseResult =
 const MAX_REPORTED_ISSUES = 20;
 
 /**
+ * Substituted for zod's own `unrecognized_keys` message, which lists every
+ * unknown key by name. The names are caller-chosen, so echoing them reflects
+ * arbitrary text back in the response and lets one issue grow without bound.
+ */
+const UNRECOGNIZED_KEYS_MESSAGE = "unrecognized keys are not allowed";
+
+/**
  * Validates an already-JSON-parsed ingest body.
  *
  * Shared by the SDK (to fail fast in development) and by the ingest route (as
@@ -173,7 +204,10 @@ export function parseIngestBatch(input: unknown): IngestBatchParseResult {
 function toIssues(error: z.ZodError): IngestValidationIssue[] {
   return error.issues.slice(0, MAX_REPORTED_ISSUES).map((issue) => ({
     path: issue.path.join("."),
-    message: issue.message,
+    message:
+      issue.code === "unrecognized_keys"
+        ? UNRECOGNIZED_KEYS_MESSAGE
+        : issue.message,
   }));
 }
 

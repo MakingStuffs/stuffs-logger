@@ -1,4 +1,4 @@
-import { MAX_URL_LENGTH } from "../contract";
+import { MAX_URL_LENGTH, normaliseRedactionKey } from "../contract";
 import type { Redactor } from "./redact";
 import { clampString } from "./sanitize";
 
@@ -11,10 +11,11 @@ import { clampString } from "./sanitize";
  * grants account access would be stored by the dashboard and readable by every
  * viewer of it for the whole retention window.
  *
- * The same key-name matching used for context keys decides what goes: a
- * parameter NAME is matched, never its value. Parameters that do not match are
- * copied through byte for byte, so nothing is re-encoded and no legitimate url
- * changes shape just by being logged.
+ * The same key-name matching used for context keys decides what goes, plus a
+ * short list of names that are only secrets in a url: a parameter NAME is
+ * matched, never its value, and never the path. Parameters that do not match
+ * are copied through byte for byte, so nothing is re-encoded and no legitimate
+ * url changes shape just by being logged.
  */
 
 /**
@@ -24,6 +25,42 @@ import { clampString } from "./sanitize";
  * one redacted parameter into two parameters, or into a fragment.
  */
 const URL_UNSAFE_REPLACEMENT_CHARS = /[&#=?\s]/g;
+
+/**
+ * Parameter names redacted in a url ONLY, over and above the shared key list.
+ *
+ * OAuth and OIDC carry their credentials under names the shared list cannot
+ * afford to match: as context keys, `code`, `state` and `key` would take
+ * `postcode`, `statement` and `keyboard` with them. In a url the names are
+ * fixed by the specs, so they are matched EXACTLY, on the normalised form —
+ * `id_token`, `ID-Token` and `idToken` all normalise to `idtoken`.
+ */
+const URL_PARAMETER_KEYS: readonly string[] = [
+  "code",
+  "state",
+  "nonce",
+  "key",
+  "sig",
+  "signature",
+  "verifier",
+  "challenge",
+  "idtoken",
+  "accesstoken",
+  "refreshtoken",
+  "sessionstate",
+];
+
+/**
+ * The last url redacted, and what it became.
+ *
+ * `location.href` is the same string on every event until the page navigates,
+ * and parsing plus rewriting it was the one per-event cost that repeated its
+ * own work. One entry is enough: the cache is for the run of events between
+ * navigations, not for the navigations.
+ */
+let cachedUrl: string | undefined;
+let cachedRedactor: Redactor | undefined;
+let cachedResult = "";
 
 function safeDecode(value: string): string {
   try {
@@ -49,7 +86,13 @@ function redactParameters(
     if (separator < 0) return part;
 
     const name = part.slice(0, separator);
-    if (!redactor.shouldRedact(safeDecode(name))) return part;
+    const decoded = safeDecode(name);
+    if (
+      !redactor.shouldRedact(decoded) &&
+      !URL_PARAMETER_KEYS.includes(normaliseRedactionKey(decoded))
+    ) {
+      return part;
+    }
 
     changed = true;
     return `${name}=${replacement}`;
@@ -65,14 +108,24 @@ function redactParameters(
  * @param redactor - The logger's redactor; `undefined` disables redaction.
  * @returns The url with matching parameter values replaced, bounded to the
  *   contract's url length. Returned unchanged when nothing matched, when
- *   redaction is off, or when the value does not parse as a url.
+ *   redaction is off, or when the value does not parse as a url. Path
+ *   segments are never touched.
  * @example
  * redactUrl("https://a.com/reset?token=abc", redactor);
  * // "https://a.com/reset?token=[redacted]"
  */
 export function redactUrl(url: string, redactor: Redactor | undefined): string {
   if (!redactor) return url;
+  if (url === cachedUrl && redactor === cachedRedactor) return cachedResult;
 
+  const result = redactParsedUrl(url, redactor);
+  cachedUrl = url;
+  cachedRedactor = redactor;
+  cachedResult = result;
+  return result;
+}
+
+function redactParsedUrl(url: string, redactor: Redactor): string {
   let parsed: URL;
   try {
     parsed = new URL(url);

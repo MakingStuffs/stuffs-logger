@@ -1,0 +1,96 @@
+# The post-deploy smoke suite.
+#
+# A handful of read-only checks against a DEPLOYED origin: it serves, an
+# anonymous visitor is refused rather than shown data, the ingest endpoint
+# authenticates, and the security headers are present. Under five minutes, no
+# writes, no fixture users, no reliance on seeded data — so it is safe to point
+# at production.
+#
+# Two ways in: a maintainer runs it by hand from the Actions tab, and
+# `release.yml` calls it after a successful publish when a `SMOKE_BASE_URL`
+# repository variable names an environment.
+name: Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Origin to check, e.g. https://logger.example.com"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      base_url:
+        required: true
+        type: string
+
+# The suite reads nothing from this repository beyond its own source.
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ inputs.base_url }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke tests
+    runs-on: ubuntu-latest
+
+    # THE INPUT NEVER REACHES A SHELL. `inputs.base_url` is bound to an
+    # environment variable here, and the `run:` steps below reference no
+    # expression at all — the suite reads `SMOKE_BASE_URL` from the
+    # environment. Interpolating a caller-supplied string into a `run:` block
+    # is the classic Actions injection, and binding it through `env:` is the
+    # documented way not to.
+    #
+    # BOTH VARIABLES, AND THE SECOND ONE IS NOT REDUNDANT. Playwright's managed
+    # `webServer` is global to a config rather than per project — it starts
+    # before any project runs and `--project=smoke` does not filter it. With
+    # only `SMOKE_BASE_URL` set, `resolveE2eTarget` reports `managesServer:
+    # true` and this job would run `pnpm run build && pnpm run start` — a
+    # `prisma generate && next build` plus `next start` — in a job that has no
+    # Postgres and no `DATABASE_URL`, purely to run four read-only checks
+    # against somebody else's origin. `E2E_BASE_URL` is how a caller says "the
+    # server is already there", which is exactly the case here.
+    env:
+      SMOKE_BASE_URL: ${{ inputs.base_url }}
+      E2E_BASE_URL: ${{ inputs.base_url }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the Playwright browser
+        run: pnpm --filter @stuffs-logger/dashboard exec playwright install --with-deps chromium
+
+      # No database, no build and no server started here: `E2E_BASE_URL` above
+      # skips Playwright's `webServer` entirely, the smoke project has no setup
+      # dependencies beyond the guard that checks `SMOKE_BASE_URL` is set, and
+      # it runs with no stored session at all.
+      - name: Run the smoke suite
+        run: pnpm test:smoke
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-report
+          # THE HTML SUMMARY ONLY — deliberately not `test-results/`. This
+          # suite points at a DEPLOYED origin that may be production, and a
+          # workflow artifact on a public repository is downloadable by anyone
+          # for its retention period. The smoke project already sets `trace`,
+          # `video` and `screenshot` to `off` (see playwright.config.ts), so
+          # there is nothing under `test-results/` worth the risk of shipping.
+          path: apps/dashboard/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

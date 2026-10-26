@@ -1,4 +1,5 @@
-import type { LogEventPayload, LogLevel } from "../contract";
+import { LOGGER_KINDS } from "../contract";
+import type { LoggerKind, LogEventPayload, LogLevel } from "../contract";
 import type { ContextCollector } from "../context/collector";
 import type { CaptureInput, LogContext } from "../types";
 import type { Redactor } from "./redact";
@@ -67,7 +68,7 @@ export function createEventFactory(options: EventFactoryOptions): EventFactory {
         staticContext,
         normalizeContext(input.context, redactor),
       );
-      const error = serializeError(input.error);
+      const error = serializeError(input.error, redactor);
       const url =
         collected.url === undefined
           ? undefined
@@ -76,8 +77,12 @@ export function createEventFactory(options: EventFactoryOptions): EventFactory {
       return {
         ts: Date.now(),
         level,
-        message: toMessage(input.message),
-        logger: input.logger ?? "manual",
+        message: toMessage(input.message, redactor),
+        // Validated like the level is: `logger` is a closed vocabulary on
+        // the wire, and an unknown kind fails the batch, not just the event.
+        logger: LOGGER_KINDS.includes(input.logger as LoggerKind)
+          ? (input.logger as LoggerKind)
+          : "manual",
         ...(context !== undefined && { context }),
         ...(error !== undefined && { error }),
         ...(url !== undefined && { url }),

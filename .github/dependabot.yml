@@ -1,0 +1,44 @@
+# Dependabot keeps the two things this repository pins current — the SHA-pinned
+# actions in `.github/workflows/` and the pnpm lockfile — on one weekly cadence.
+#
+# docs/CI-CD.md, "Action pinning", promises that Dependabot opens the pull
+# requests that move a pin; this file is what makes that true.
+version: 2
+
+updates:
+  # THE ACTION PINS. Every `uses:` is pinned to a full commit SHA with the
+  # version in a trailing comment (`actions/checkout@<sha> # v7.0.1`), and
+  # `scripts/workflow-invariants.test.mjs` fails the build if one is not.
+  # Dependabot's github-actions ecosystem understands that form and moves the
+  # SHA and the comment together, so a bump keeps the invariant by
+  # construction rather than by a reviewer noticing.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  # THE WORKSPACE. One entry at the root covers every workspace package,
+  # because that is where `pnpm-lock.yaml` lives; Dependabot resolves the
+  # workspace with the repository's own pnpm (`packageManager`).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # Enough to keep the queue short and reviewable. Security updates are not
+    # counted against this limit.
+    open-pull-requests-limit: 5
+    # Minor and patch bumps arrive as ONE pull request rather than one per
+    # package: they are reviewed and verified as a set anyway, and a dozen
+    # single-line pull requests a week is how a reviewer stops reading them.
+    # Majors stay separate, because a major is where the reading matters.
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    # Dependabot's own cooling-off period, matching pnpm's `minimumReleaseAge`
+    # (pnpm-workspace.yaml): a version under a day old is not proposed. Without
+    # this, Dependabot would propose a version pnpm then refuses to resolve and
+    # the pull request would arrive already red.
+    cooldown:
+      default-days: 1

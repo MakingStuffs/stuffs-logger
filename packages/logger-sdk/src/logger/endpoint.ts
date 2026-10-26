@@ -1,5 +1,6 @@
 import { INGEST_PATH } from "../contract";
 import { isBrowserRuntime, readEnv } from "../context/runtime";
+import type { DiagnosticHandler } from "../types";
 
 /**
  * Working out where batches go, from as little configuration as possible.
@@ -30,18 +31,35 @@ function isTransportSecure(url: URL): boolean {
   return CLEARTEXT_HOSTS.includes(url.hostname);
 }
 
-function withIngestPath(base: string): string | undefined {
+function withIngestPath(
+  base: string,
+  report: DiagnosticHandler | undefined,
+): string | undefined {
   try {
     const url = new URL(base);
     if (!isTransportSecure(url)) return undefined;
-    if (url.pathname.endsWith(INGEST_PATH)) return url.toString();
 
-    const prefix = url.pathname.endsWith("/")
-      ? url.pathname.slice(0, -1)
-      : url.pathname;
-    url.pathname = `${prefix}${INGEST_PATH}`;
+    // `https://user:pass@host` is a credential ingest would never read — it
+    // authenticates on the key header alone — and a url that carries one is
+    // a url `fetch` refuses outright, every time, with a TypeError the
+    // transport can only read as "network down". Dropped, and said so.
+    if (url.username !== "" || url.password !== "") {
+      url.username = "";
+      url.password = "";
+      report?.(new Error("endpoint credentials discarded"), "logger.config");
+    }
+
+    // The ingest path takes no query and no fragment, whichever form the
+    // endpoint was given in.
     url.search = "";
     url.hash = "";
+
+    if (!url.pathname.endsWith(INGEST_PATH)) {
+      const prefix = url.pathname.endsWith("/")
+        ? url.pathname.slice(0, -1)
+        : url.pathname;
+      url.pathname = `${prefix}${INGEST_PATH}`;
+    }
     return url.toString();
   } catch {
     // Not a URL at all.
@@ -58,6 +76,7 @@ function withIngestPath(base: string): string | undefined {
  * loopback host, because the ingest key would travel in cleartext.
  *
  * @param endpoint - The `endpoint` option, if supplied.
+ * @param report - Told when something in the url had to be discarded.
  * @returns The absolute URL, or `undefined` when none could be determined —
  *   the caller reports that and disables the logger rather than guessing.
  * @example
@@ -66,16 +85,17 @@ function withIngestPath(base: string): string | undefined {
  */
 export function resolveEndpoint(
   endpoint: string | undefined,
+  report?: DiagnosticHandler,
 ): string | undefined {
-  if (endpoint) return withIngestPath(endpoint);
+  if (endpoint) return withIngestPath(endpoint, report);
 
   const fromEnv = readEnv(ENDPOINT_ENV_VAR);
-  if (fromEnv) return withIngestPath(fromEnv);
+  if (fromEnv) return withIngestPath(fromEnv, report);
 
   if (isBrowserRuntime()) {
     const origin = window.location?.origin;
     if (typeof origin === "string" && origin.length > 0) {
-      return withIngestPath(origin);
+      return withIngestPath(origin, report);
     }
   }
 

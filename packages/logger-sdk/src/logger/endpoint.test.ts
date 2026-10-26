@@ -32,6 +32,32 @@ describe("resolveEndpoint", () => {
     );
   });
 
+  it("discards a query or fragment supplied with a full ingest url too", () => {
+    expect(resolveEndpoint(`https://example.com${INGEST_PATH}?debug=1#x`)).toBe(
+      `https://example.com${INGEST_PATH}`,
+    );
+  });
+
+  it("discards credentials embedded in the endpoint, and says so", () => {
+    const report = vi.fn();
+
+    const endpoint = resolveEndpoint(
+      "https://ada:hunter2@logs.example.com",
+      report,
+    );
+
+    expect(endpoint).toBe(`https://logs.example.com${INGEST_PATH}`);
+    expect(report).toHaveBeenCalledWith(expect.any(Error), "logger.config");
+  });
+
+  it("stays quiet when there were no credentials to discard", () => {
+    const report = vi.fn();
+
+    resolveEndpoint("https://logs.example.com?x=1", report);
+
+    expect(report).not.toHaveBeenCalled();
+  });
+
   it("refuses a non-http scheme", () => {
     expect(resolveEndpoint("javascript:alert(1)")).toBeUndefined();
     expect(resolveEndpoint("file:///etc/passwd")).toBeUndefined();

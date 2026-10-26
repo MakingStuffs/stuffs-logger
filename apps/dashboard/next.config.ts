@@ -33,6 +33,10 @@ const allowedOrigins: string[] =
  * `Referrer-Policy` keeps filter terms — which can contain user identifiers —
  * out of the `Referer` sent to any URL a log line links to.
  *
+ * The `Permissions-Policy` names `browsing-topics`, the feature that replaced
+ * FLoC's `interest-cohort`; the old name is no longer a feature any browser
+ * recognises, so declaring it declared nothing.
+ *
  * The nonce-based `script-src` policy is NOT here, because a nonce is
  * per-response and this list is static: `src/proxy.ts` ships it as
  * `Content-Security-Policy-Report-Only`, and `lib/security/csp.ts` documents
@@ -48,17 +52,24 @@ const SECURITY_HEADERS = [
   { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+    value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
   },
 ];
 
 /**
  * HSTS, production only. Setting it in development would pin `localhost` to
  * HTTPS in the developer's browser for a year.
+ *
+ * NO `preload` DIRECTIVE. `preload` is not a browser instruction: it is the
+ * marker the HSTS preload list requires before it accepts a domain, and an
+ * opt-in commitment that the domain and EVERY subdomain will serve HTTPS for
+ * good — hard to undo once the list ships it. That is a decision for the
+ * operator who registers their domain, not a default this app can make on
+ * their behalf; an operator who has submitted theirs appends it here.
  */
 const HSTS_HEADER = {
   key: "Strict-Transport-Security",
-  value: "max-age=63072000; includeSubDomains; preload",
+  value: "max-age=63072000; includeSubDomains",
 };
 
 const nextConfig: NextConfig = {
@@ -66,15 +77,32 @@ const nextConfig: NextConfig = {
   // vulnerabilities, and nothing depends on it.
   poweredByHeader: false,
 
+  /**
+   * A self-contained server for plain-Node hosts.
+   *
+   * `next start` needs the whole `node_modules` tree beside it — in this
+   * workspace, hundreds of megabytes of build tooling and test runners that
+   * a running dashboard never loads. Standalone output traces what each route
+   * actually imports and copies only that, with its own `server.js`, into
+   * `.next/standalone/`. The workspace root is detected automatically (the
+   * lockfile marks it), so the tree inside mirrors the monorepo and the
+   * server lives at `.next/standalone/apps/dashboard/server.js`; the Prisma
+   * query engine is traced in with the client that loads it. Vercel ignores
+   * the setting, and `next start` still runs for the e2e suite — with a
+   * warning that the standalone server is the one to deploy. `docs/DEPLOYMENT.md`
+   * has the run command.
+   */
+  output: "standalone",
+
   experimental: {
     serverActions: { allowedOrigins },
   },
 
   async headers() {
-    const headers =
-      process.env.NODE_ENV === "production"
-        ? [...SECURITY_HEADERS, HSTS_HEADER]
-        : SECURITY_HEADERS;
+    const isProduction = process.env.NODE_ENV === "production";
+    const documentHeaders = isProduction
+      ? [...SECURITY_HEADERS, HSTS_HEADER]
+      : SECURITY_HEADERS;
 
     return [
       {
@@ -83,11 +111,17 @@ const nextConfig: NextConfig = {
         // meaningless there, and its own CORS headers are set per key by the
         // route handler.
         source: "/((?!api/v1/ingest).*)",
-        headers,
+        headers: documentHeaders,
       },
       {
+        // The ingest endpoint keeps `nosniff` and, in production, HSTS: an
+        // SDK that was once told to use HTTPS for this host must keep being
+        // told, and a response that omits the header on this path is a gap in
+        // the pin the documents set.
         source: "/api/v1/ingest",
-        headers: [{ key: "X-Content-Type-Options", value: "nosniff" }],
+        headers: isProduction
+          ? [{ key: "X-Content-Type-Options", value: "nosniff" }, HSTS_HEADER]
+          : [{ key: "X-Content-Type-Options", value: "nosniff" }],
       },
     ];
   },
