@@ -120,22 +120,20 @@ environment.
 
 ## 9. Publishing and release
 
-- **Before the first push to `main`, decide the first version.** semantic-release has no
-  tags to read (`git tag -l` is empty), so it treats this as a first release and
-  publishes `1.0.0`, not `0.2.0`, ignoring the `0.1.0` in the manifests. To continue the
-  0.x line run `git tag v0.1.0 <commit> && git push origin v0.1.0` first. **Decided:
-  continue 0.x.** `CHANGELOG.md` has the hand-written `0.1.0` entry; pushing the tag and
-  merging with a merge commit are still to do (`CI-CD.md`, "Before the first release",
-  item 3). The merge of this branch IS the first push: the checklist in
+- **Tag the baseline before the first release.** The release script refuses to run
+  without a stable `vX.Y.Z` tag reachable from `main` (`git tag -l` is empty today).
+  **Decided: continue 0.x.** `CHANGELOG.md` has the hand-written `0.1.0` entry; run
+  `git tag v0.1.0 <commit> && git push origin v0.1.0` (`CI-CD.md`, "Before the first
+  release", item 3). The merge of this branch IS the first push: the checklist in
   [`CI-CD.md`](./CI-CD.md) ("Before the first release") must be worked through before it, including protecting the
   `npm-publish` environment and restricting who may create `*-rc` branches, because any
   push to either publishes to public npm.
 - **npm credential.** `NPM_TOKEN` must be a granular token that expires (record the
   expiry) or be replaced by npm trusted publishing (`CI-CD.md`, "npm credentials"). The
-  release now runs `pnpm whoami` in `verifyConditions`, so an expired token fails before
+  release runs `pnpm whoami` before writing anything, so an expired token fails before
   the tag is pushed rather than after. After the first rc publish confirm provenance with
-  `npm view @stuffs-logger/sdk@<version> dist.attestations`; if absent, switch
-  `publishCmd` to the `npm publish` form documented there.
+  `npm view @stuffs-logger/sdk@<version> dist.attestations`; if absent, switch the
+  publish to the `npm publish` form documented there.
 - **`@stuffs-logger/sdk` depends on `@stuffs-logger/core` even though it bundles it.**
   `tsup`'s `noExternal` inlines the core's _code_, but the SDK's emitted declarations
   still reference `@stuffs-logger/core` for `IngestBatch` and its leaf modules for the
@@ -209,8 +207,8 @@ level)` index would also cut the overview aggregate from 29 ms to ~12 ms for +83
 
 ## 13. Dependencies
 
-- `pnpm audit` is clean except `braces@3.0.3` (via `micromatch` under semantic-release
-  and `eslint-config-next`, dev-only): the advisory names `>=3.0.4` as patched but no
+- `pnpm audit` is clean except `braces@3.0.3` (via `micromatch` under
+  `eslint-config-next`, dev-only): the advisory names `>=3.0.4` as patched but no
   such version is on the registry. Dependabot (`.github/dependabot.yml`) will propose it
   when it exists.
 - `pnpm-workspace.yaml` carries `overrides` for four transitive packages whose dependents

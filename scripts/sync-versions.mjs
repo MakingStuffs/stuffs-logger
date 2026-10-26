@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 /**
  * Writes one version into every manifest in the workspace.
  *
- * semantic-release computes a single version for the repository, and this
+ * `scripts/release.sh` computes a single version for the repository, and this
  * repository ships that one version everywhere: the root, both published
  * packages and the (private) dashboard. Lockstep is what lets
  * `@stuffs-logger/sdk@1.4.0` state `"@stuffs-logger/core": "1.4.0"` and mean
@@ -13,9 +13,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * pack time, so if the two manifests ever disagreed the published SDK would
  * quietly depend on a core that was never released.
  *
- * It is a plain `.mjs` module with no build step on purpose: it runs from
- * semantic-release's `prepare` step, where anything that needs compiling first
- * is a way for a release to fail halfway through.
+ * It is a plain `.mjs` module with no build step on purpose: it runs partway
+ * through the release, where anything that needs compiling first is a way for
+ * a release to fail halfway through.
  *
  * @example
  * node scripts/sync-versions.mjs 1.4.0
@@ -38,8 +38,8 @@ export const LOCKSTEP_MANIFESTS = [
 /**
  * The official SemVer 2.0.0 grammar, anchored.
  *
- * The version arrives as a command-line argument interpolated by
- * semantic-release, so it is untrusted input by the time it reaches this
+ * The version arrives as a command-line argument from the release script,
+ * so it is untrusted input by the time it reaches this
  * module. Validating it here means a malformed or hostile value fails loudly
  * before anything is written, rather than landing in four manifests.
  */
@@ -65,7 +65,7 @@ function serialiseManifest(manifest) {
  *
  * Rewrites a file only when its contents would actually change, which is what
  * makes a second run a no-op rather than a fresh set of modified timestamps
- * for `@semantic-release/git` to commit.
+ * for the release commit to pick up.
  *
  * @param {object} options
  * @param {string} options.version - The version to write. Must be valid SemVer.
