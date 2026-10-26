@@ -9,12 +9,12 @@ and how to run each suite on your own machine.
 
 ## The workflows
 
-| File                            | Trigger                                               | What it does                                                               |
-| ------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------- |
-| `.github/workflows/ci.yml`      | `pull_request`; `push` to `main` and `*-rc`           | Runs the whole verification suite, and auto-formats same-repo PRs.         |
-| `.github/workflows/verify.yml`  | `workflow_call` only — never on its own               | Format, lint, types, unit tests, build, tarball audit, e2e and smoke.      |
-| `.github/workflows/release.yml` | `push` to `main` and `*-rc`                           | Verifies, then runs semantic-release: version, build, audit, tag, publish. |
-| `.github/workflows/smoke.yml`   | `workflow_dispatch` with a URL input; `workflow_call` | Runs the `@smoke` subset against a deployed origin.                        |
+| File                            | Trigger                                               | What it does                                                                   |
+| ------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `.github/workflows/ci.yml`      | `pull_request`; `push` to `main` and `*-rc`           | Runs the whole verification suite, and auto-formats same-repo PRs.             |
+| `.github/workflows/verify.yml`  | `workflow_call` only — never on its own               | Format, lint, types, unit tests, build, tarball audit, e2e and smoke.          |
+| `.github/workflows/release.yml` | `push` to `main` and `*-rc`                           | Verifies, then runs `scripts/release.sh`: version, build, audit, tag, publish. |
+| `.github/workflows/smoke.yml`   | `workflow_dispatch` with a URL input; `workflow_call` | Runs the `@smoke` subset against a deployed origin.                            |
 
 `.github/dependabot.yml` is not a workflow but belongs in the list: it opens
 the weekly pull requests that move the action pins and the lockfile (see
@@ -46,11 +46,11 @@ definition of those checks and both entry points call it.
 
 `release.yml`
 
-| Job       | Runs                                                                                                                                              |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verify`  | Calls `verify.yml`. The release job `needs:` it.                                                                                                  |
-| `release` | `pnpm release` — semantic-release, from an install of **only** the root, `@stuffs-logger/core` and `@stuffs-logger/sdk`, with no install scripts. |
-| `smoke`   | Calls `smoke.yml`, only when the `SMOKE_BASE_URL` variable is set.                                                                                |
+| Job       | Runs                                                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `verify`  | Calls `verify.yml`. The release job `needs:` it.                                                                           |
+| `release` | `scripts/release.sh`, from an install of **only** `@stuffs-logger/core` and `@stuffs-logger/sdk`, with no install scripts. |
+| `smoke`   | Calls `smoke.yml`, only when the `SMOKE_BASE_URL` variable is set.                                                         |
 
 ### Badges
 
@@ -81,10 +81,10 @@ is expanded in its own section below.
 2. **Restrict who may create `*-rc` branches** with a ruleset (Settings →
    Rules): restrict creations and updates on the pattern `*-rc` to a named
    bypass list of maintainers. See "A ruleset restricting `*-rc` branches".
-3. **Decide the first version before the first push to `main`.** There are no
-   git tags, so semantic-release will publish **`1.0.0`** from the first
-   release-worthy commit on `main` — not `0.2.0`. If the 0.x line should
-   continue, tag first and push the tag before anything else:
+3. **Tag the baseline before the first release.** The release script measures
+   from the last stable `vX.Y.Z` tag reachable from the branch, and refuses to
+   run when there is none rather than guess a starting version. Tag first and
+   push the tag:
 
    ```sh
    git tag v0.1.0 <the commit that is 0.1.0> && git push origin v0.1.0
@@ -92,10 +92,9 @@ is expanded in its own section below.
 
    **Decided: the 0.x line continues.** `CHANGELOG.md` already carries a
    hand-written `0.1.0` entry, so tag the commit that added it (or any later
-   commit before the merge). Then merge with a **merge commit**, not a squash
-   or rebase merge: semantic-release only counts tags reachable from `main`,
-   and both of those rewrite the tagged commit, which leaves the tag outside
-   `main`'s history and brings back `1.0.0`.
+   commit already on `main`). The tag must be reachable from `main`: a tag on
+   a branch commit that was later squash- or rebase-merged sits outside
+   `main`'s history and the script will not find it.
 
    See "Release channels" and `FOLLOW-UPS.md` §9.
 
@@ -112,7 +111,7 @@ is expanded in its own section below.
 | Secret              | Required                               | Used by                                                | Notes                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------- | -------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NPM_TOKEN`         | Until trusted publishing is configured | `release.yml`, the `release` job's `Release` step only | A **granular** access token scoped to the `@stuffs-logger` packages with "bypass 2FA", **which expires** — see "npm credentials" for the exact settings, the expiry, and the trusted-publishing setup that removes this secret altogether. **Store it as an environment secret on `npm-publish`, not a repository secret.** It is exercised by `pnpm whoami` before anything is tagged. |
-| `GITHUB_TOKEN`      | Provided automatically                 | `release.yml`                                          | Creates the GitHub Release, comments on released issues and PRs, and authenticates the version commit's push (semantic-release builds its own `x-access-token` push URL from it; the checkout persists no credential).                                                                                                                                                                  |
+| `GITHUB_TOKEN`      | Provided automatically                 | `release.yml`                                          | Authenticates the version commit's push (passed to that one `git push` as a header; the checkout persists no credential) and, through `gh`, creates the GitHub Release.                                                                                                                                                                                                                 |
 | `FORMAT_PUSH_TOKEN` | Optional — see below                   | `ci.yml`, the `auto-format` job                        | A fine-grained PAT or GitHub App installation token with `contents: write` on this repository, **no branch-protection bypass** and **no Workflows permission**. It must be a different credential from any release token that has a bypass.                                                                                                                                             |
 
 No other job in any workflow receives a secret, and no workflow ever echoes,
@@ -188,10 +187,11 @@ trusted publisher yet, so the very first version of each goes out with a token
 (below); add the trusted publisher immediately after, then retire the token.
 
 Once it is configured: delete the `NPM_TOKEN` environment secret, delete the
-`NODE_AUTH_TOKEN` line from `release.yml`, and change `verifyConditionsCmd`
-in `release.config.mjs` from `pnpm whoami …` to
-`test -n "$ACTIONS_ID_TOKEN_REQUEST_URL"` — there is no token left to
-exercise, and that is the check that the job was granted `id-token: write`.
+`NODE_AUTH_TOKEN` line from `release.yml`, and change the `pnpm whoami` line
+in `scripts/release.sh` to
+`[[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]] || fail "no id-token: write"` —
+there is no token left to exercise, and that is the check that the job was
+granted `id-token: write`.
 
 **Otherwise: a granular access token, never a classic one.** If a token must
 remain, it must be a **granular** access token (npmjs.com → Access Tokens →
@@ -210,7 +210,7 @@ token:
   replacing the `npm-publish` environment secret.
 
 **Provenance, and confirming it took.** Every publish passes `--provenance`
-(`release.config.mjs`), which attaches a signed SLSA attestation naming the
+(`scripts/release.sh`), which attaches a signed SLSA attestation naming the
 workflow, repository and commit a version was built from. It does not stop a
 stolen token being used — it makes the resulting version visibly unattested on
 the npm package page instead of indistinguishable from a real one. pnpm's
@@ -224,32 +224,32 @@ npm view @stuffs-logger/sdk@<version> dist.attestations
 
 If that prints nothing, pnpm's publish did not attach provenance on this
 toolchain. Publish the packed tarballs with npm itself, which does: replace
-`publishCmd` in `release.config.mjs` with
+the `pnpm … publish` command in `scripts/release.sh` with
 
-```js
-publishCmd:
-  "mkdir -p \"$RUNNER_TEMP/tarballs\" && " +
-  "pnpm -C packages/logger-core pack --pack-destination \"$RUNNER_TEMP/tarballs\" && " +
-  "pnpm -C packages/logger-sdk pack --pack-destination \"$RUNNER_TEMP/tarballs\" && " +
-  "npm publish \"$RUNNER_TEMP\"/tarballs/stuffs-logger-core-*.tgz --access public --provenance --tag ${nextRelease.channel || 'latest'} && " +
-  "npm publish \"$RUNNER_TEMP\"/tarballs/stuffs-logger-sdk-*.tgz --access public --provenance --tag ${nextRelease.channel || 'latest'}",
+```bash
+TARBALLS="${RUNNER_TEMP}/tarballs"
+mkdir -p "$TARBALLS"
+pnpm -C packages/logger-core pack --pack-destination "$TARBALLS"
+pnpm -C packages/logger-sdk pack --pack-destination "$TARBALLS"
+npm publish "$TARBALLS"/stuffs-logger-core-*.tgz --access public --provenance --tag "$DIST_TAG"
+npm publish "$TARBALLS"/stuffs-logger-sdk-*.tgz --access public --provenance --tag "$DIST_TAG"
 ```
 
 Core before SDK, because the SDK pins the core at the exact version being
 released. `pnpm pack` applies `publishConfig` and rewrites `workspace:*`
 exactly as `pnpm publish` does, so the tarballs are the ones
-`scripts/verify-pack.mjs` audited in the prepare step; `npm publish` of a
+`scripts/verify-pack.mjs` audited before the tag; `npm publish` of a
 tarball reads `NODE_AUTH_TOKEN` through the same runner `.npmrc`.
 
 ### Branch protection on `main`
 
-semantic-release **commits back to the branch** — `@semantic-release/git` is in
-the plugin chain, and it pushes `CHANGELOG.md` plus all four `package.json`
-files with the message `chore(release): <version> [skip ci]`.
+The release **commits back to the branch**: `scripts/release.sh` pushes
+`CHANGELOG.md` plus all four `package.json` files with the message
+`chore(release): <version> [skip ci]`, together with the tag.
 
 That means the release actor must be allowed to push directly to `main`. If
 `main` requires pull requests, the default `GITHUB_TOKEN` **cannot** push and
-every release will fail at the `git` step. Pick one:
+every release will fail at the `git push`. Pick one:
 
 - add a bypass allowance for the release actor, or
 - give the release job a PAT or GitHub App token that holds the bypass.
@@ -397,15 +397,13 @@ review note.
   (`pnpm@11.22.0`). There is no second source of truth to keep in step.
 - **Node is pinned to `24` in the workflows**, deliberately not read from
   `engines.node`. That field is the _range_ `">=22"`, and resolving a range in
-  CI means the pipeline silently moves to whatever Node is newest. 24 is chosen
-  because `semantic-release@25` declares
-  `engines.node: "^22.14.0 || >= 24.10.0"`, so it is the only major that
-  satisfies both the repository and the release tool.
+  CI means the pipeline silently moves to whatever Node is newest. 24 is the
+  active LTS line.
 
 Installs use `pnpm install --frozen-lockfile` everywhere, and the pnpm store is
 cached by `actions/setup-node`'s `cache: pnpm`, keyed on `pnpm-lock.yaml`. The
-release job alone installs a **filtered** workspace — the root, the core and
-the SDK, with `--ignore-scripts` — because it is the job that holds the npm
+release job alone installs a **filtered** workspace — the core and the SDK,
+with `--ignore-scripts` — because it is the job that holds the npm
 credential and nothing in a release needs the dashboard's Next.js, Prisma or
 Playwright trees (see `release.yml`).
 
@@ -450,43 +448,58 @@ the first time it is met:
 | `*-rc` | `x.y.z-rc.N` | `rc`         | `vX.Y.Z-rc.N` |
 
 All four manifests move in lockstep — the root, both published packages and the
-dashboard — via `scripts/sync-versions.mjs`, which semantic-release calls
-through `@semantic-release/exec`.
+dashboard — via `scripts/sync-versions.mjs`, which the release script calls.
+
+### How the version is chosen
+
+`scripts/release.sh` reads every non-merge commit since the last stable tag
+reachable from the branch (`git describe --exclude 'v*-*'`) and takes the
+largest bump any of them asks for:
+
+| Commit                                                                                                                 | Bump                 |
+| ---------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `!` before the colon (`feat!:`, `fix(sdk)!:`), or a line in the body starting `BREAKING CHANGE:` or `BREAKING-CHANGE:` | major (minor on 0.x) |
+| `feat:`                                                                                                                | minor                |
+| `fix:`, `perf:`, `revert:`                                                                                             | patch                |
+| anything else, including a subject that is not a Conventional Commit                                                   | none                 |
+
+If nothing asks for a bump, the run exits cleanly without releasing. On an
+`-rc` branch the same calculation gives the next stable version, and the
+release is that version's next unused `-rc.N`.
+
+**While the version is `0.x`, a breaking change bumps the minor**, so the
+first breaking change after `0.1.0` releases `0.2.0`, not `1.0.0`. Leaving
+`0.x` is a deliberate step the script never takes on its own.
 
 ### What happens, in order
 
-semantic-release runs its plugins in fixed steps, and `release.config.mjs`
-places each command so that **everything that can fail does so before the git
-tag exists**. A tag with no matching npm version is the one state that cannot
-be re-run: semantic-release sees the tag and treats the version as released.
+The script is ordered so that **everything that can fail does so before the
+git tag exists**. A tag with no matching npm version is the one state a re-run
+cannot repair: the next run measures from that tag and sees nothing to release.
 
-| Step               | What runs                                                                                                         | If it fails                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `verifyConditions` | `pnpm whoami` — exercises the npm credential                                                                      | Nothing written. An expired token stops here.                            |
-| `prepare`          | `sync-versions.mjs`, the core and SDK **build**, `verify-pack.mjs` (tarball audit), changelog, the version commit | Nothing pushed. Re-run after fixing.                                     |
-| (semantic-release) | `git push` of the commit, then the **tag**                                                                        |                                                                          |
-| `publish`          | `pnpm publish` of both packages, then the GitHub Release                                                          | The only step after the tag, with every other failure already behind it. |
+| Step           | What runs                                                                                  | If it fails                                   |
+| -------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------- |
+| Checks         | CI only, `GITHUB_TOKEN` set, clean tree, then `pnpm whoami` — exercises the npm credential | Nothing written. An expired token stops here. |
+| Prepare        | `sync-versions.mjs`, the changelog entry, the core and SDK **build**, `verify-pack.mjs`    | Nothing committed. Re-run after fixing.       |
+| Commit and tag | `chore(release): <version> [skip ci]` and an annotated `vX.Y.Z`, locally                   | Nothing pushed. Re-run after fixing.          |
+| Push           | `git push --atomic` of the commit and the tag — both land, or neither                      | Nothing published. Re-run after fixing.       |
+| Publish        | `pnpm publish` of both packages, then `gh release create`                                  | The only step after the tag. See below.       |
 
-`dist/` is gitignored, so building in `prepare` changes nothing the version
+`dist/` is gitignored, so building before the commit changes nothing the
 commit contains.
 
-**semantic-release resolves the `*-rc` glob with `git ls-remote`**, so an `-rc`
-branch that only exists locally yields `ERELEASEBRANCHES`. Push the branch
-first.
-
-**The first release from `main` will be `1.0.0`, not `0.2.0`** — there are no
-git tags, so semantic-release treats it as a first release and ignores the
-`0.1.0` in the manifests. If the 0.x line should continue, push a `v0.1.0` tag
-before the first release run (the exact command is in "Before the first
-release"). See `FOLLOW-UPS.md` §9.
+**If the publish fails after the push**, the tag exists and the next run will
+not retry it. Publish that version by hand from the tagged commit
+(`git checkout vX.Y.Z`, build, then the same `pnpm … publish` command the
+script runs), then create the GitHub Release with
+`gh release create vX.Y.Z --verify-tag`.
 
 To rehearse without publishing anything:
 
 ```sh
 pnpm release:verify-pack # builds, packs and audits both tarballs; offline
-pnpm release:dry-run     # loads the config and plugins, then resolves branches
-                         # with `git ls-remote` — so it needs the network and
-                         # a GITHUB_TOKEN, and stops at `git ls-remote` without
+pnpm release:dry-run     # prints the next version and its changelog entry;
+                         # needs the tags locally (`git fetch --tags`)
 ```
 
 ## Testing
@@ -755,13 +768,14 @@ the smoke suite locally".
 `pnpm --filter @stuffs-logger/sdk build`. The root `pnpm test:e2e` does this
 for you; running Playwright directly does not.
 
-**`ERELEASEBRANCHES` from semantic-release.** The `-rc` branch does not exist on
-the remote. Push it.
+**The release fails with `no stable vX.Y.Z tag is reachable from HEAD`.** The
+baseline tag is missing, or sits on a commit outside the branch's history. See
+"Before the first release", item 3.
 
-**The release fails at `verifyConditions` with `ERR_PNPM_WHOAMI_UNAUTHORIZED`.**
+**The release fails at `pnpm whoami` with `ERR_PNPM_WHOAMI_UNAUTHORIZED`.**
 `NPM_TOKEN` is missing from the `npm-publish` environment, or has expired.
 Nothing was tagged; rotate the token (or finish the trusted-publishing setup)
 and re-run. See "npm credentials".
 
-**The release fails at `@semantic-release/git`.** Branch protection is refusing
-the version commit. See "Branch protection on `main`" above.
+**The release fails at `git push`.** Branch protection is refusing the
+version commit. See "Branch protection on `main`" above.

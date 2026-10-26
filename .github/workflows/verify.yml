@@ -20,10 +20,8 @@ env:
   #
   # `engines.node` is the RANGE ">=22", and resolving a range means CI silently
   # moves to whatever Node is newest — which is how a green pipeline turns red
-  # on a morning nobody changed anything. 24 is chosen because
-  # `semantic-release@25` declares `engines.node: "^22.14.0 || >= 24.10.0"`, so
-  # it is the only major that satisfies both the repository and the release
-  # tool. pnpm IS read from the manifest: `pnpm/action-setup` takes its version
+  # on a morning nobody changed anything. 24 is the active LTS line. pnpm IS
+  # read from the manifest: `pnpm/action-setup` takes its version
   # from the root `packageManager` field when none is given.
   NODE_VERSION: "24"
 

@@ -1,14 +1,14 @@
 # The release pipeline.
 #
-# semantic-release reads the conventional commits since the last tag, computes
-# the next version, writes it into all four manifests, builds and audits
-# `@stuffs-logger/core` and `@stuffs-logger/sdk`, commits the changelog and
-# the version bump back to the branch, tags it, publishes both packages to
-# public npm, and cuts a GitHub Release. The order — build and audit BEFORE
-# the tag, publish after — is set in release.config.mjs and is what stops a
-# failed publish leaving a tag npm never received.
+# `scripts/release.sh` reads the conventional commits since the last stable
+# tag, computes the next version, writes it into all four manifests, builds
+# and audits `@stuffs-logger/core` and `@stuffs-logger/sdk`, commits the
+# changelog and the version bump back to the branch, tags it, publishes both
+# packages to public npm, and cuts a GitHub Release. The order — build and
+# audit BEFORE the tag, publish after — is set in that script and is what
+# stops a failed publish leaving a tag npm never received.
 #
-# CHANNELS (from release.config.mjs, not from this file):
+# CHANNELS (from scripts/release.sh, not from this file):
 #   main    -> x.y.z        npm dist-tag `latest`   git tag vX.Y.Z
 #   *-rc    -> x.y.z-rc.N   npm dist-tag `rc`       git tag vX.Y.Z-rc.N
 name: Release
@@ -17,12 +17,11 @@ on:
   push:
     branches:
       - main
-      # The same glob semantic-release resolves via `git ls-remote`. A
-      # local-only `-rc` branch yields ERELEASEBRANCHES; push it first.
+      # Prereleases: `x.y.z-rc.N` on the `rc` dist-tag.
       - "*-rc"
 
-# Read-only by default; the release job widens it to exactly what
-# semantic-release's plugin chain uses and nothing more.
+# Read-only by default; the release job widens it to exactly what the
+# release script uses and nothing more.
 permissions:
   contents: read
 
@@ -70,18 +69,16 @@ jobs:
       name: npm-publish
       url: https://www.npmjs.com/package/@stuffs-logger/sdk
 
-    # Exactly the scopes semantic-release's plugin chain needs:
+    # Exactly the scopes the release script needs:
     permissions:
       contents: write # the version commit, the git tag, the GitHub Release
-      issues: write # @semantic-release/github comments on released issues
-      pull-requests: write # ...and on released pull requests
       # The OIDC token npm signs the provenance attestation with — and, once
       # trusted publishing is configured on npmjs.com, the token npm exchanges
       # for publish rights, replacing NPM_TOKEN entirely. Provenance is what
       # makes a stolen NPM_TOKEN detectable rather than silent: a version
       # published from anywhere other than this workflow, on this repository,
       # at this ref carries no attestation and npm says so on the package
-      # page. `release.config.mjs` passes `--provenance` to the publish.
+      # page. `scripts/release.sh` passes `--provenance` to the publish.
       id-token: write
 
     env:
@@ -91,7 +88,7 @@ jobs:
       # workspace settings and each workspace package's name AND VERSION, and
       # when they differ it runs a plain `pnpm install` first — unfiltered,
       # with install scripts. `sync-versions.mjs` rewrites all four versions
-      # in semantic-release's prepare step, so without this the build that
+      # partway through `scripts/release.sh`, so without this the build that
       # follows it would silently reinstall the whole workspace, scripts and
       # dashboard included, beside the npm credential. (Verified against pnpm
       # 11.22.0: the `pnpm_config_` spelling is the one it honours; the
@@ -102,26 +99,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # semantic-release reads the whole commit history to work out what
-          # changed since the last tag. A shallow clone makes it compute the
-          # wrong version, silently.
+          # The release reads every commit and tag since the last stable
+          # tag. A shallow clone has neither, and the script refuses to run
+          # without a baseline tag rather than guessing one.
           fetch-depth: 0
-          # NO CREDENTIAL IN `.git/config`. semantic-release does not use the
-          # one `actions/checkout` would persist: it builds its own push URL,
-          # `https://x-access-token:<GITHUB_TOKEN>@github.com/…`, from the
-          # `GITHUB_TOKEN` the Release step is given (see
-          # `semantic-release/lib/get-git-auth-url.js`). Persisting the
-          # checkout's copy only put a write-scoped token on disk where every
-          # build script and dependency in this job could read it.
+          # NO CREDENTIAL IN `.git/config`. `scripts/release.sh` passes the
+          # Release step's `GITHUB_TOKEN` to its one `git push` as a
+          # per-command header instead. Persisting the checkout's copy would
+          # only put a write-scoped token on disk where every build script
+          # and dependency in this job could read it.
           persist-credentials: false
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # 24, not 22: `semantic-release@25` declares
-          # `engines.node: "^22.14.0 || >= 24.10.0"`, which the repository's
-          # own `>=22` is looser than.
+          # The same major `verify.yml` tests on.
           node-version: "24"
           cache: pnpm
           # Writes a runner-level `.npmrc` (under $RUNNER_TEMP, not in the
@@ -133,10 +126,11 @@ jobs:
       #
       # This job holds the npm credential, so the dependency tree it installs
       # is the dependency tree that credential is exposed to. The release
-      # touches three workspace projects — the root (semantic-release and its
-      # plugins), the core and the SDK (tsup, to build the tarballs) — and
-      # nothing in it needs the dashboard's Next.js, Prisma or Playwright
-      # trees, so those are not installed here at all.
+      # builds two workspace projects — the core and the SDK, with their own
+      # tsup — and the script itself needs only bash, git, node and `gh`, all
+      # on the runner already. Nothing in it needs the root's tooling or the
+      # dashboard's Next.js, Prisma or Playwright trees, so those are not
+      # installed here at all.
       #
       # `--ignore-scripts` means no dependency's install hook runs beside the
       # token either. The build needs only `esbuild`, whose binary resolves
@@ -146,18 +140,17 @@ jobs:
       - name: Install the release toolchain
         run: >-
           pnpm install --frozen-lockfile --ignore-scripts
-          --filter stuffs-logger
           --filter @stuffs-logger/core
           --filter @stuffs-logger/sdk
 
       - name: Release
-        # The whole pipeline, exactly as `release.config.mjs` defines it.
-        # cosmiconfig discovers that file at the repository root, so there is
-        # no `--extends` or `-c` flag to keep in step with it.
-        run: pnpm release
+        # The whole pipeline, in `scripts/release.sh`. Run with `bash`
+        # directly rather than `pnpm release`: no root install is needed for
+        # a script that has no dependencies.
+        run: bash scripts/release.sh
         env:
-          # Creates the GitHub Release, comments on released issues and pull
-          # requests, and authenticates the version commit's push.
+          # Authenticates the version commit's push and, through `gh`,
+          # creates the GitHub Release.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # The npm credential. A GRANULAR access token scoped to the
           # `@stuffs-logger/*` packages with "bypass 2FA", which EXPIRES —
@@ -168,14 +161,12 @@ jobs:
           # THE ONLY PLACE THIS SECRET APPEARS. It is scoped to this one step,
           # never echoed, never written to a file this workflow keeps, and
           # never present in any job that uploads an artifact. It is exercised
-          # by `pnpm whoami` in semantic-release's verifyConditions step, so an
-          # expired token fails the run before anything is tagged.
+          # by `pnpm whoami` before the script writes anything, so an expired
+          # token fails the run before anything is tagged.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          # The identity on the version commit and the tag. Without these
-          # semantic-release signs them as `semantic-release-bot
-          # <semantic-release-bot@martynus.net>` — the tool's own placeholder,
-          # which is not an identity this repository has any relationship
-          # with. `41898282+github-actions[bot]` is the account GitHub
+          # The identity on the version commit and the tag; the runner has
+          # none configured, so without these the commit fails.
+          # `41898282+github-actions[bot]` is the account GitHub
           # attributes Actions' own pushes to, the same one `ci.yml`'s
           # auto-format commit uses.
           GIT_AUTHOR_NAME: github-actions[bot]

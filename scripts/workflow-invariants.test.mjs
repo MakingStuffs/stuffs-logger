@@ -184,19 +184,13 @@ function jobLevelPermissions(lines) {
 /**
  * The only token scopes any job in this repository has a use for.
  *
- * `contents` for the checkout, the auto-format push and the release commit;
- * `issues` and `pull-requests` for @semantic-release/github's comments;
- * `id-token` for npm provenance. A job asking for `packages`, `actions`,
+ * `contents` for the checkout, the auto-format push, the release commit and
+ * the GitHub Release; `id-token` for npm provenance. A job asking for `packages`, `actions`,
  * `deployments` or anything else is asking for something no step here does,
  * and the right response is to say so in a failing test rather than to grant
  * it.
  */
-const PERMITTED_JOB_SCOPES = [
-  "contents",
-  "issues",
-  "pull-requests",
-  "id-token",
-];
+const PERMITTED_JOB_SCOPES = ["contents", "id-token"];
 
 const workflows = readWorkflows();
 

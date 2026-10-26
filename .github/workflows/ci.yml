@@ -11,7 +11,7 @@ on:
   push:
     branches:
       - main
-      # The release channel semantic-release resolves through the same glob.
+      # The prerelease channel `scripts/release.sh` cuts from the same glob.
       - "*-rc"
 
 # READ-ONLY BY DEFAULT. Exactly one job below widens this, and only to the one

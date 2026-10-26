@@ -2,11 +2,11 @@
 
 All notable changes to `@stuffs-logger/core`, `@stuffs-logger/sdk` and the self-hosted dashboard. Every package shares one version, so one entry covers all three.
 
-Entries are written by [semantic-release](https://semantic-release.gitbook.io) from the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) on `main` and on `*-rc` branches, and the same notes are published to [GitHub Releases](https://github.com/MakingStuffs/stuffs-logger/releases). Do not edit them here: fix the wording of a commit message before it merges instead.
+Entries are written by [`scripts/release.sh`](./scripts/release.sh) from the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) on `main` and on `*-rc` branches, and the same notes are published to [GitHub Releases](https://github.com/MakingStuffs/stuffs-logger/releases). Do not edit them here: fix the wording of a commit message before it merges instead.
 
 ## 0.1.0 (2026-10-26)
 
-The baseline every later entry is measured from, written by hand because it predates the release pipeline. It was never published to npm: the first version on npm is the first one semantic-release cuts after the `v0.1.0` tag.
+The baseline every later entry is measured from, written by hand because it predates the release pipeline. It was never published to npm: the first version on npm is the first one the release script cuts after the `v0.1.0` tag.
 
 ### Features
 

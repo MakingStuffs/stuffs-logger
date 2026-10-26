@@ -76,9 +76,10 @@ There are two ways to use this, and they do not overlap much:
 ## Project status
 
 Pre-1.0. The packages follow [SemVer](https://semver.org), and the version is
-set by semantic-release from commit messages, so a breaking change always means
-a new major. The first breaking change will therefore be
-released as `1.0.0`. Read the [changelog](./CHANGELOG.md) before upgrading.
+set from commit messages by the release script. While the version is `0.x`, a
+breaking change bumps the minor (`0.1.x` to `0.2.0`); moving to `1.0.0` is a
+deliberate step, not a side effect of a commit. Read the
+[changelog](./CHANGELOG.md) before upgrading.
 
 Scope is deliberately one organisation per deployment: every signed-in account
 can read every application's logs. It is not designed as a multi-tenant hosted
@@ -173,7 +174,7 @@ environment-variable table, and both deployment paths.
 | `pnpm --filter @stuffs-logger/sdk build` | SDK bundles + size report                                      |
 | `pnpm --filter @stuffs-logger/sdk size`  | Rebuilds the `<script>` bundle and prints its gzipped size     |
 | `pnpm release:verify-pack`               | Packs both published packages and audits the tarballs. Offline |
-| `pnpm release:dry-run`                   | What semantic-release would do. Publishes nothing              |
+| `pnpm release:dry-run`                   | The next version and its notes. Writes and publishes nothing   |
 | `pnpm version:sync <version>`            | Writes one version into all four manifests                     |
 
 ## Tests
@@ -215,8 +216,8 @@ the collection boundary, and how to write a new spec.
 ## Versioning and releases
 
 Every package carries the **same version**, and it is set by
-[semantic-release](https://semantic-release.gitbook.io) from Conventional
-Commits — there are no changeset files and no manual bumps.
+[`scripts/release.sh`](./scripts/release.sh) from Conventional Commits — there
+are no changeset files and no manual bumps.
 
 | Branch     | Version      | npm dist-tag | git tag       |
 | ---------- | ------------ | ------------ | ------------- |
@@ -232,9 +233,8 @@ and is never published.
 [`CHANGELOG.md`](./CHANGELOG.md) is written by the same release, from the same
 commits, and the notes also go to
 [GitHub Releases](https://github.com/MakingStuffs/stuffs-logger/releases). Each
-release adds its entry under the header; nothing in it is edited by hand. A
-test (`scripts/changelog.test.mjs`) fails the build if the file's header and
-the one `release.config.mjs` gives semantic-release drift apart.
+release adds its entry above the previous one, below the header; nothing in
+it is edited by hand.
 
 Setting up a fork means one npm automation token and a branch-protection
 allowance for the release actor — both in [`docs/CI-CD.md`](./docs/CI-CD.md).
@@ -262,8 +262,8 @@ before they are pushed.
 
 **Commit messages are the changelog.** Each commit on `main` must follow
 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), because
-semantic-release reads them to choose the next version and write its
-changelog entry. If a pull request is squash-merged, its title becomes the
+the release script reads them to choose the next version and write its
+changelog entry. A commit that does not follow the format is left out of both. If a pull request is squash-merged, its title becomes the
 commit message, so the title must follow the same format.
 
 | Commit                                                      | Release | Changelog section        |
@@ -272,8 +272,12 @@ commit message, so the title must follow the same format.
 | `feat(dashboard): …`                                        | minor   | Features                 |
 | `perf: …`                                                   | patch   | Performance Improvements |
 | `revert: …`                                                 | patch   | Reverts                  |
-| `feat!: …`, or a `BREAKING CHANGE:` footer                  | major   | ⚠ BREAKING CHANGES       |
+| `feat!: …`, or a `BREAKING CHANGE:` footer                  | major¹  | ⚠ BREAKING CHANGES       |
 | `docs`, `chore`, `refactor`, `test`, `ci`, `build`, `style` | none    | Not listed               |
+
+¹ Minor while the version is `0.x`. The `!` works after a scope too
+(`fix(sdk)!: …`), and the footer may be spelled `BREAKING-CHANGE:`; it must
+start its own line.
 
 Add a scope (`core`, `sdk`, `dashboard` or `ci`) when a change belongs to one
 area; the changelog prints it in bold. Write the subject for the person

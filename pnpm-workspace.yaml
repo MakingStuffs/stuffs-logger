@@ -53,7 +53,7 @@ allowBuilds:
 #
 # The repository's own packages are excluded so a workspace package can
 # depend on a sibling the moment it is released: the SDK pins the core at the
-# exact lockstep version semantic-release just published.
+# exact lockstep version the release just published.
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@stuffs-logger/*"
