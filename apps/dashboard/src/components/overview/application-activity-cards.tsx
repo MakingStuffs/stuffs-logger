@@ -1,4 +1,4 @@
-import { ERROR_LEVELS } from "@stuffs-logger/core/taxonomy";
+import { ERROR_LEVELS } from "@stuffs/logger-core/taxonomy";
 import Link from "next/link";
 
 import type { ApplicationActivity, ApplicationSummary } from "@/lib/logs/dto";

@@ -207,7 +207,7 @@ awk -v notes="$NOTES_FILE" '
 ' CHANGELOG.md >CHANGELOG.md.next
 mv CHANGELOG.md.next CHANGELOG.md
 
-pnpm --filter @stuffs-logger/core --filter @stuffs-logger/sdk build
+pnpm --filter @stuffs/logger-core --filter @stuffs/logger build
 node "${SCRIPT_DIR}/verify-pack.mjs"
 
 # Only the changelog and the manifests sync-versions.mjs rewrote; anything
@@ -231,7 +231,7 @@ git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${AUTH}" \
 
 # pnpm publishes in dependency order — core before SDK, because the SDK pins
 # the core at this exact version.
-pnpm --filter @stuffs-logger/core --filter @stuffs-logger/sdk publish \
+pnpm --filter @stuffs/logger-core --filter @stuffs/logger publish \
   --access public --provenance --no-git-checks --tag "$DIST_TAG"
 
 PRERELEASE_FLAG="--latest"

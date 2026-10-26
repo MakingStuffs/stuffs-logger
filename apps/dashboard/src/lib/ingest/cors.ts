@@ -1,4 +1,4 @@
-import { INGEST_KEY_HEADER } from "@stuffs-logger/core";
+import { INGEST_KEY_HEADER } from "@stuffs/logger-core";
 
 import type { ExtraHeaders } from "@/lib/api/responses";
 

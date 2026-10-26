@@ -2,7 +2,7 @@
 #
 # `scripts/release.sh` reads the conventional commits since the last stable
 # tag, computes the next version, writes it into all four manifests, builds
-# and audits `@stuffs-logger/core` and `@stuffs-logger/sdk`, commits the
+# and audits `@stuffs/logger-core` and `@stuffs/logger`, commits the
 # changelog and the version bump back to the branch, tags it, publishes both
 # packages to public npm, and cuts a GitHub Release. The order — build and
 # audit BEFORE the tag, publish after — is set in that script and is what
@@ -50,7 +50,7 @@ jobs:
     # THE ONE CONTROL THAT DECIDES WHO MAY PUBLISH.
     #
     # This job is triggered by a push to `main` or to any branch matching
-    # `*-rc`, and it holds publish rights to the whole `@stuffs-logger`
+    # `*-rc`, and it holds publish rights to the whole `@stuffs`
     # scope — a granular npm token today, an OIDC trust relationship once
     # trusted publishing is configured. Without an environment, that makes
     # "publish to the public registry" reachable by anyone with repository
@@ -67,7 +67,7 @@ jobs:
     # branches.
     environment:
       name: npm-publish
-      url: https://www.npmjs.com/package/@stuffs-logger/sdk
+      url: https://www.npmjs.com/package/@stuffs/logger
 
     # Exactly the scopes the release script needs:
     permissions:
@@ -140,8 +140,8 @@ jobs:
       - name: Install the release toolchain
         run: >-
           pnpm install --frozen-lockfile --ignore-scripts
-          --filter @stuffs-logger/core
-          --filter @stuffs-logger/sdk
+          --filter @stuffs/logger-core
+          --filter @stuffs/logger
 
       - name: Release
         # The whole pipeline, in `scripts/release.sh`. Run with `bash`
@@ -153,7 +153,7 @@ jobs:
           # creates the GitHub Release.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # The npm credential. A GRANULAR access token scoped to the
-          # `@stuffs-logger/*` packages with "bypass 2FA", which EXPIRES —
+          # `@stuffs/*` packages with "bypass 2FA", which EXPIRES —
           # docs/CI-CD.md records the date and the renewal steps — or nothing
           # at all once trusted publishing is configured on npmjs.com, when
           # this line is deleted and the OIDC token above takes its place.

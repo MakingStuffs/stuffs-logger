@@ -1,4 +1,4 @@
-import type { LogLevel } from "@stuffs-logger/core/taxonomy";
+import type { LogLevel } from "@stuffs/logger-core/taxonomy";
 
 import { DEFAULT_PAGE_SIZE } from "@/lib/logs/constants";
 import type { LogFilters, RawSearchParams } from "@/lib/logs/filters";

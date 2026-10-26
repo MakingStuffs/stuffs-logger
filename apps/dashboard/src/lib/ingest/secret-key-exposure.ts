@@ -1,4 +1,4 @@
-import type { LogSource } from "@stuffs-logger/core";
+import type { LogSource } from "@stuffs/logger-core";
 
 import type { IngestKeyType } from "./keys";
 

@@ -7,7 +7,7 @@ import type { RedactionOptions } from "../types";
  *
  * The matching itself is NOT implemented here: the key list, the key
  * normalization and the pattern compilation all come from
- * `@stuffs-logger/core`'s redaction module via `../contract`, because the SDK and
+ * `@stuffs/logger-core`'s redaction module via `../contract`, because the SDK and
  * the ingest server are two ends of one control. Two lists would drift, and
  * the drift would be silent — a key added server-side would simply never be
  * redacted in the browser. What IS the SDK's own is the policy below: a

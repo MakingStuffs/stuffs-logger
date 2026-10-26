@@ -71,7 +71,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install the Playwright browser
-        run: pnpm --filter @stuffs-logger/dashboard exec playwright install --with-deps chromium
+        run: pnpm --filter @stuffs/logger-dashboard exec playwright install --with-deps chromium
 
       # No database, no build and no server started here: `E2E_BASE_URL` above
       # skips Playwright's `webServer` entirely, the smoke project has no setup

@@ -5,8 +5,8 @@ dashboard.** Built to replace the small slice of a hosted logging vendor we
 actually used, without the bill.
 
 [![CI](https://github.com/MakingStuffs/stuffs-logger/actions/workflows/ci.yml/badge.svg)](https://github.com/MakingStuffs/stuffs-logger/actions/workflows/ci.yml)
-[![npm @stuffs-logger/sdk](https://img.shields.io/npm/v/@stuffs-logger/sdk?label=%40stuffs-logger%2Fsdk)](https://www.npmjs.com/package/@stuffs-logger/sdk)
-[![npm @stuffs-logger/core](https://img.shields.io/npm/v/@stuffs-logger/core?label=%40stuffs-logger%2Fcore)](https://www.npmjs.com/package/@stuffs-logger/core)
+[![npm @stuffs/logger](https://img.shields.io/npm/v/@stuffs/logger?label=%40stuffs%2Flogger)](https://www.npmjs.com/package/@stuffs/logger)
+[![npm @stuffs/logger-core](https://img.shields.io/npm/v/@stuffs/logger-core?label=%40stuffs%2Flogger-core)](https://www.npmjs.com/package/@stuffs/logger-core)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](./LICENSE)
 
 [Changelog](./CHANGELOG.md) ·
@@ -48,7 +48,7 @@ There are two ways to use this, and they do not overlap much:
 
 ## Features
 
-**The SDK** ([`@stuffs-logger/sdk`](./packages/logger-sdk/README.md))
+**The SDK** ([`@stuffs/logger`](./packages/logger-sdk/README.md))
 
 - One package for Node, React, Next.js and a plain `<script>` tag, and it never
   throws into your code.
@@ -98,15 +98,11 @@ service.
 ## Using the SDK
 
 ```sh
-pnpm add @stuffs-logger/sdk
+pnpm add @stuffs/logger
 ```
 
 ```ts
-import {
-  captureConsole,
-  captureErrors,
-  createLogger,
-} from "@stuffs-logger/sdk";
+import { captureConsole, captureErrors, createLogger } from "@stuffs/logger";
 
 const logger = createLogger({ apiKey: "slg_pub_…" });
 captureConsole(logger); // console.log/warn/error still work, and ship
@@ -117,7 +113,7 @@ No build step at all:
 
 ```html
 <script
-  src="https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js"
+  src="https://unpkg.com/@stuffs/logger/dist/stuffs-logger.global.js"
   data-slg-key="slg_pub_…"
   data-slg-endpoint="https://logs.example.com"
 ></script>
@@ -137,13 +133,13 @@ Postgres and nothing else.
 pnpm install
 cp apps/dashboard/.env.example apps/dashboard/.env.local
 # fill in DATABASE_URL, DIRECT_DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL
-pnpm --filter @stuffs-logger/dashboard db:migrate    # needs a running Postgres
+pnpm --filter @stuffs/logger-dashboard db:migrate    # needs a running Postgres
 pnpm dev
 ```
 
 `build`, `typecheck` and `test` each run `prisma generate` first, so a fresh
 clone needs no separate generate step. Run
-`pnpm --filter @stuffs-logger/dashboard db:generate` by hand only if you want
+`pnpm --filter @stuffs/logger-dashboard db:generate` by hand only if you want
 the client without doing any of the three.
 
 Self-service sign-up is off by design: any signed-in account reads every
@@ -152,7 +148,7 @@ manage everyone else from the app:
 
 ```bash
 DATABASE_URL='postgres://…' \
-  pnpm --filter @stuffs-logger/dashboard user:create-admin -- \
+  pnpm --filter @stuffs/logger-dashboard user:create-admin -- \
   --email you@example.com --name "Your Name"
 ```
 
@@ -161,21 +157,21 @@ environment-variable table, and both deployment paths.
 
 ## Commands
 
-| Command                                  | What it does                                                   |
-| ---------------------------------------- | -------------------------------------------------------------- |
-| `pnpm dev`                               | The dashboard, in development                                  |
-| `pnpm build`                             | Core, SDK, then the dashboard                                  |
-| `pnpm typecheck`                         | Types, across every package                                    |
-| `pnpm lint`                              | ESLint, across every package plus `scripts/`                   |
-| `pnpm format` / `pnpm format:check`      | Prettier, write and check                                      |
-| `pnpm test` (alias `pnpm test:unit`)     | Every unit suite                                               |
-| `pnpm test:e2e`                          | Playwright, against a real Postgres and a production build     |
-| `pnpm test:smoke`                        | The `@smoke` subset against `SMOKE_BASE_URL` + `E2E_BASE_URL`  |
-| `pnpm --filter @stuffs-logger/sdk build` | SDK bundles + size report                                      |
-| `pnpm --filter @stuffs-logger/sdk size`  | Rebuilds the `<script>` bundle and prints its gzipped size     |
-| `pnpm release:verify-pack`               | Packs both published packages and audits the tarballs. Offline |
-| `pnpm release:dry-run`                   | The next version and its notes. Writes and publishes nothing   |
-| `pnpm version:sync <version>`            | Writes one version into all four manifests                     |
+| Command                              | What it does                                                   |
+| ------------------------------------ | -------------------------------------------------------------- |
+| `pnpm dev`                           | The dashboard, in development                                  |
+| `pnpm build`                         | Core, SDK, then the dashboard                                  |
+| `pnpm typecheck`                     | Types, across every package                                    |
+| `pnpm lint`                          | ESLint, across every package plus `scripts/`                   |
+| `pnpm format` / `pnpm format:check`  | Prettier, write and check                                      |
+| `pnpm test` (alias `pnpm test:unit`) | Every unit suite                                               |
+| `pnpm test:e2e`                      | Playwright, against a real Postgres and a production build     |
+| `pnpm test:smoke`                    | The `@smoke` subset against `SMOKE_BASE_URL` + `E2E_BASE_URL`  |
+| `pnpm --filter @stuffs/logger build` | SDK bundles + size report                                      |
+| `pnpm --filter @stuffs/logger size`  | Rebuilds the `<script>` bundle and prints its gzipped size     |
+| `pnpm release:verify-pack`           | Packs both published packages and audits the tarballs. Offline |
+| `pnpm release:dry-run`               | The next version and its notes. Writes and publishes nothing   |
+| `pnpm version:sync <version>`        | Writes one version into all four manifests                     |
 
 ## Tests
 
@@ -192,7 +188,7 @@ Three suites, three questions:
   ```sh
   createdb stuffs_logger_e2e
   cp apps/dashboard/.env.e2e.example apps/dashboard/.env.e2e
-  pnpm --filter @stuffs-logger/dashboard exec playwright install chromium
+  pnpm --filter @stuffs/logger-dashboard exec playwright install chromium
   pnpm test:e2e
   ```
 
@@ -227,7 +223,7 @@ are no changeset files and no manual bumps.
 Merging to `main` publishes a stable release; pushing to a branch whose name
 ends in `-rc` publishes a release candidate on the `rc` tag. The release commits
 `CHANGELOG.md` and all four manifests back as
-`chore(release): <version> [skip ci]`. `@stuffs-logger/dashboard` stays private
+`chore(release): <version> [skip ci]`. `@stuffs/logger-dashboard` stays private
 and is never published.
 
 [`CHANGELOG.md`](./CHANGELOG.md) is written by the same release, from the same

@@ -2,7 +2,7 @@ import {
   INGEST_KEY_HEADER,
   MAX_BODY_BYTES,
   parseIngestEnvelope,
-} from "@stuffs-logger/core";
+} from "@stuffs/logger-core";
 import { NextResponse } from "next/server";
 
 import { ApiError } from "@/lib/api/errors";

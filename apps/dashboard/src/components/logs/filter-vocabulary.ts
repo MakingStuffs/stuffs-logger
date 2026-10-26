@@ -2,13 +2,13 @@ import {
   DEVICE_TYPES,
   LOG_LEVELS,
   LOG_SOURCES,
-} from "@stuffs-logger/core/taxonomy";
+} from "@stuffs/logger-core/taxonomy";
 import type {
   DeviceType,
   LoggerKind,
   LogLevel,
   LogSource,
-} from "@stuffs-logger/core/taxonomy";
+} from "@stuffs/logger-core/taxonomy";
 
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/logs/constants";
 
@@ -25,7 +25,7 @@ import type { BadgeProps } from "../ui/badge";
  *
  * IMPORTED FROM LEAVES, NOT BARRELS. This module is reached from the
  * client-rendered log row, so everything it imports ships to the browser. The
- * `@stuffs-logger/core` barrel re-exports the ingest schemas and therefore
+ * `@stuffs/logger-core` barrel re-exports the ingest schemas and therefore
  * zod, and `lib/logs/filters.ts` IS a zod schema: either import would put the
  * whole validator in the bundle to read a few string arrays and two integers.
  */

@@ -46,11 +46,11 @@ definition of those checks and both entry points call it.
 
 `release.yml`
 
-| Job       | Runs                                                                                                                       |
-| --------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `verify`  | Calls `verify.yml`. The release job `needs:` it.                                                                           |
-| `release` | `scripts/release.sh`, from an install of **only** `@stuffs-logger/core` and `@stuffs-logger/sdk`, with no install scripts. |
-| `smoke`   | Calls `smoke.yml`, only when the `SMOKE_BASE_URL` variable is set.                                                         |
+| Job       | Runs                                                                                                                   |
+| --------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `verify`  | Calls `verify.yml`. The release job `needs:` it.                                                                       |
+| `release` | `scripts/release.sh`, from an install of **only** `@stuffs/logger-core` and `@stuffs/logger`, with no install scripts. |
+| `smoke`   | Calls `smoke.yml`, only when the `SMOKE_BASE_URL` variable is set.                                                     |
 
 ### Badges
 
@@ -103,16 +103,16 @@ is expanded in its own section below.
 5. **Let the release actor push to `main`** — a bypass for the release actor,
    or a token that holds one. See "Branch protection on `main`".
 6. **After the first `rc` publish, confirm provenance took**:
-   `npm view @stuffs-logger/sdk@<version> dist.attestations`. See "npm
+   `npm view @stuffs/logger@<version> dist.attestations`. See "npm
    credentials" for what to do if it prints nothing.
 
 ### Secrets
 
-| Secret              | Required                               | Used by                                                | Notes                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------- | -------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NPM_TOKEN`         | Until trusted publishing is configured | `release.yml`, the `release` job's `Release` step only | A **granular** access token scoped to the `@stuffs-logger` packages with "bypass 2FA", **which expires** — see "npm credentials" for the exact settings, the expiry, and the trusted-publishing setup that removes this secret altogether. **Store it as an environment secret on `npm-publish`, not a repository secret.** It is exercised by `pnpm whoami` before anything is tagged. |
-| `GITHUB_TOKEN`      | Provided automatically                 | `release.yml`                                          | Authenticates the version commit's push (passed to that one `git push` as a header; the checkout persists no credential) and, through `gh`, creates the GitHub Release.                                                                                                                                                                                                                 |
-| `FORMAT_PUSH_TOKEN` | Optional — see below                   | `ci.yml`, the `auto-format` job                        | A fine-grained PAT or GitHub App installation token with `contents: write` on this repository, **no branch-protection bypass** and **no Workflows permission**. It must be a different credential from any release token that has a bypass.                                                                                                                                             |
+| Secret              | Required                               | Used by                                                | Notes                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------- | -------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NPM_TOKEN`         | Until trusted publishing is configured | `release.yml`, the `release` job's `Release` step only | A **granular** access token scoped to the `@stuffs` packages with "bypass 2FA", **which expires** — see "npm credentials" for the exact settings, the expiry, and the trusted-publishing setup that removes this secret altogether. **Store it as an environment secret on `npm-publish`, not a repository secret.** It is exercised by `pnpm whoami` before anything is tagged. |
+| `GITHUB_TOKEN`      | Provided automatically                 | `release.yml`                                          | Authenticates the version commit's push (passed to that one `git push` as a header; the checkout persists no credential) and, through `gh`, creates the GitHub Release.                                                                                                                                                                                                          |
+| `FORMAT_PUSH_TOKEN` | Optional — see below                   | `ci.yml`, the `auto-format` job                        | A fine-grained PAT or GitHub App installation token with `contents: write` on this repository, **no branch-protection bypass** and **no Workflows permission**. It must be a different credential from any release token that has a bypass.                                                                                                                                      |
 
 No other job in any workflow receives a secret, and no workflow ever echoes,
 prints or writes one to an artifact.
@@ -131,7 +131,7 @@ in `secrets` would only make the logs harder to read.
 `release.yml`'s `release` job declares `environment: npm-publish`. That key
 alone changes nothing: it binds the job to an environment, and the **gating is
 repository configuration**. Until the following is done, publishing to the
-public `@stuffs-logger` scope is reachable by anyone with repository **write**
+public `@stuffs` scope is reachable by anyone with repository **write**
 access, which is a strictly lower privilege — push a branch named
 `anything-rc` and `release.yml` publishes it under the maintainer's npm
 identity as `x.y.z-rc.N`, on the `rc` dist-tag, unreplaceably. `needs: verify`
@@ -168,8 +168,8 @@ rotated. With trusted publishing, npm trusts the OIDC token GitHub mints for
 the release job (`id-token: write` is already set) and exchanges it for
 publish rights at publish time, so "who may publish" is a property of this
 workflow file rather than of whoever can read a secret. Configure it on
-npmjs.com for **each** package — `@stuffs-logger/core` and
-`@stuffs-logger/sdk` — under _Package settings → Publishing access → Trusted
+npmjs.com for **each** package — `@stuffs/logger-core` and
+`@stuffs/logger` — under _Package settings → Publishing access → Trusted
 publisher → GitHub Actions_, with exactly these values:
 
 | Field                | Value           |
@@ -198,7 +198,7 @@ remain, it must be a **granular** access token (npmjs.com → Access Tokens →
 Generate New Token → **Granular Access Token**), not a classic "Automation"
 token:
 
-- _Packages and scopes_: **read and write**, limited to the `@stuffs-logger`
+- _Packages and scopes_: **read and write**, limited to the `@stuffs`
   scope. No organisation permissions.
 - _Bypass two-factor authentication_: **enabled**, because the job is
   unattended.
@@ -219,7 +219,7 @@ because pnpm bundles libnpmpublish 11.2.0), so **after the first `rc` publish,
 check that the attestation is really there**:
 
 ```sh
-npm view @stuffs-logger/sdk@<version> dist.attestations
+npm view @stuffs/logger@<version> dist.attestations
 ```
 
 If that prints nothing, pnpm's publish did not attach provenance on this
@@ -232,7 +232,7 @@ mkdir -p "$TARBALLS"
 pnpm -C packages/logger-core pack --pack-destination "$TARBALLS"
 pnpm -C packages/logger-sdk pack --pack-destination "$TARBALLS"
 npm publish "$TARBALLS"/stuffs-logger-core-*.tgz --access public --provenance --tag "$DIST_TAG"
-npm publish "$TARBALLS"/stuffs-logger-sdk-*.tgz --access public --provenance --tag "$DIST_TAG"
+npm publish "$TARBALLS"/stuffs-logger-[0-9]*.tgz --access public --provenance --tag "$DIST_TAG"
 ```
 
 Core before SDK, because the SDK pins the core at the exact version being
@@ -604,7 +604,7 @@ and they are printed in CI logs.
 **3. Install the browser** (once):
 
 ```sh
-pnpm --filter @stuffs-logger/dashboard exec playwright install chromium
+pnpm --filter @stuffs/logger-dashboard exec playwright install chromium
 ```
 
 **4. Run it.**
@@ -618,7 +618,7 @@ Playwright builds and starts the dashboard itself, applies
 real form, and then runs the specs. To view the report afterwards:
 
 ```sh
-pnpm --filter @stuffs-logger/dashboard test:e2e:report
+pnpm --filter @stuffs/logger-dashboard test:e2e:report
 ```
 
 If port 3000 is already taken — a very common state on a developer's machine —
@@ -765,7 +765,7 @@ reused — stop it, or unset `E2E_BASE_URL`.
 the smoke suite locally".
 
 **The round-trip spec fails with "the SDK's `<script>` build is missing".** Run
-`pnpm --filter @stuffs-logger/sdk build`. The root `pnpm test:e2e` does this
+`pnpm --filter @stuffs/logger build`. The root `pnpm test:e2e` does this
 for you; running Playwright directly does not.
 
 **The release fails with `no stable vX.Y.Z tag is reachable from HEAD`.** The

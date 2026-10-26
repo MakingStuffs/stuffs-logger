@@ -1,7 +1,7 @@
 /**
  * The hard limits of the ingest wire contract.
  *
- * These live in `@stuffs-logger/core` so the SDK and the server enforce the SAME
+ * These live in `@stuffs/logger-core` so the SDK and the server enforce the SAME
  * numbers. If the SDK trimmed at one bound and the server rejected at another,
  * every batch on the seam between them would be silently dropped.
  */

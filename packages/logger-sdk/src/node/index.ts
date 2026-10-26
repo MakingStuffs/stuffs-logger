@@ -3,7 +3,7 @@ import { createLoggerWith } from "../logger/create-logger";
 import type { Logger, LoggerOptions } from "../types";
 
 /**
- * `@stuffs-logger/sdk/node` — the Node-only entry point.
+ * `@stuffs/logger/node` — the Node-only entry point.
  *
  * Identical API to `.`, minus the DOM support. Suited to servers, workers and
  * CLIs, where the ingest key must be a secret key and the endpoint has to be

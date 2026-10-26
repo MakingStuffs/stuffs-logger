@@ -19,7 +19,7 @@ import { build } from "tsup";
  * Three numbers, because they answer different questions:
  *
  * - `global`       what a raw HTML page downloads, captures included.
- * - `browser`      what a bundler pulls in from `@stuffs-logger/sdk/browser` if the
+ * - `browser`      what a bundler pulls in from `@stuffs/logger/browser` if the
  *                  application uses the whole surface.
  * - `browserCore`  what an application that only calls `createLogger` pays,
  *                  once its bundler has tree-shaken the captures away.
@@ -36,7 +36,7 @@ const browserBuildOptions = {
   dts: false,
   clean: false,
   treeshake: true,
-  noExternal: ["@stuffs-logger/core"],
+  noExternal: ["@stuffs/logger-core"],
   tsconfig: "./tsconfig.json",
   silent: true,
   outExtension: () => ({ js: ".js" }),

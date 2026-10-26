@@ -6,7 +6,7 @@ import { createUserWithTemporaryPassword } from "@/lib/users/provisioning";
  * Creates an ADMIN with a temporary password — the first-administrator
  * bootstrap, with no SQL and no temporary code edit.
  *
- *   pnpm --filter @stuffs-logger/dashboard user:create-admin -- \
+ *   pnpm --filter @stuffs/logger-dashboard user:create-admin -- \
  *     --email you@example.com --name "Your Name"
  *
  * Reads `DATABASE_URL` as the app does: from the environment, or from the

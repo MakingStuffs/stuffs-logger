@@ -1,4 +1,4 @@
-import { INGEST_KEY_HEADER, INGEST_PATH } from "@stuffs-logger/core";
+import { INGEST_KEY_HEADER, INGEST_PATH } from "@stuffs/logger-core";
 import { expect, test } from "@playwright/test";
 
 import { LOGS_PATH } from "@/components/logs/search-params";

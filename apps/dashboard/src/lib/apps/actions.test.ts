@@ -1,4 +1,4 @@
-import { PUBLIC_KEY_PREFIX, SECRET_KEY_PREFIX } from "@stuffs-logger/core";
+import { PUBLIC_KEY_PREFIX, SECRET_KEY_PREFIX } from "@stuffs/logger-core";
 import { revalidatePath } from "next/cache";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

@@ -27,7 +27,7 @@ function makeEvent(overrides: Partial<LogEventPayload> = {}): LogEventPayload {
 
 function makeBatch(overrides: Partial<IngestBatch> = {}): IngestBatch {
   return {
-    sdk: { name: "@stuffs-logger/sdk", version: "0.1.0" },
+    sdk: { name: "@stuffs/logger", version: "0.1.0" },
     environment: "production",
     source: "browser",
     events: [makeEvent()],

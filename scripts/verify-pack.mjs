@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 /**
  * Packs every publishable package and audits the tarball npm would receive.
  *
- * A workspace hides publishing bugs: in here `@stuffs-logger/core` resolves to
+ * A workspace hides publishing bugs: in here `@stuffs/logger-core` resolves to
  * TypeScript source, `workspace:*` resolves to a symlink, and `dist/` may be
  * left over from a build three commits ago. None of that survives contact with
  * a registry. The only honest way to know what a consumer gets is to build the
@@ -293,7 +293,7 @@ function verifyPackage(relativePackageDir, expectedVersion, scratchRoot) {
   for (const [dependency, range] of Object.entries(
     manifest.dependencies ?? {},
   )) {
-    if (!dependency.startsWith("@stuffs-logger/")) continue;
+    if (!dependency.startsWith("@stuffs/")) continue;
     if (range !== expectedVersion) {
       problems.push(
         `${dependency} is "${range}" — expected the exact lockstep version "${expectedVersion}"`,
@@ -325,7 +325,7 @@ function verifyPackage(relativePackageDir, expectedVersion, scratchRoot) {
  * subpath another tarball actually exports.
  *
  * The SDK bundles the core's *code* in, but its emitted `.d.ts` still re-exports
- * types from `@stuffs-logger/core/taxonomy`, `/redaction` and `/json` — the leaf
+ * types from `@stuffs/logger-core/taxonomy`, `/redaction` and `/json` — the leaf
  * modules the SDK imports to stay clear of zod. Those specifiers resolve inside
  * this workspace through a tsconfig path mapping that no consumer has. If the
  * core's published `exports` map does not carry the same subpaths, the SDK's
@@ -342,8 +342,7 @@ function verifyCrossPackageTypes(packages) {
     ]),
   );
 
-  const specifierPattern =
-    /(?:from|import)\s+["'](@stuffs-logger\/[^"']+)["']/g;
+  const specifierPattern = /(?:from|import)\s+["'](@stuffs\/[^"']+)["']/g;
 
   for (const { name, contentsDir, files, problems } of packages) {
     const declarations = files.filter((file) =>

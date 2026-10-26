@@ -2,7 +2,7 @@ import {
   EMPTY_MESSAGE_PLACEHOLDER,
   INGEST_KEY_HEADER,
   MAX_BODY_BYTES,
-} from "@stuffs-logger/core";
+} from "@stuffs/logger-core";
 import {
   afterEach,
   beforeEach,
@@ -90,7 +90,7 @@ function secretKeyRow() {
 
 function batch(overrides: Record<string, unknown> = {}) {
   return {
-    sdk: { name: "@stuffs-logger/sdk", version: "0.1.0" },
+    sdk: { name: "@stuffs/logger", version: "0.1.0" },
     environment: "production",
     source: "browser",
     events: [

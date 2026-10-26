@@ -12,7 +12,7 @@ email address. The password route is closed by `emailAndPassword.disableSignUp` 
 provider itself (the password flag never reaches an OAuth callback). Accounts are
 operator-provisioned and default to `MEMBER` / `isActive: true`.
 
-Create the first administrator with `pnpm --filter @stuffs-logger/dashboard
+Create the first administrator with `pnpm --filter @stuffs/logger-dashboard
 user:create-admin -- --email … --name …` ([`DEPLOYMENT.md`](./DEPLOYMENT.md)). Every later
 user, application, ingest key and API token is managed from the admin screens in the app;
 no administrative task needs SQL any more.
@@ -132,17 +132,17 @@ environment.
   expiry) or be replaced by npm trusted publishing (`CI-CD.md`, "npm credentials"). The
   release runs `pnpm whoami` before writing anything, so an expired token fails before
   the tag is pushed rather than after. After the first rc publish confirm provenance with
-  `npm view @stuffs-logger/sdk@<version> dist.attestations`; if absent, switch the
+  `npm view @stuffs/logger@<version> dist.attestations`; if absent, switch the
   publish to the `npm publish` form documented there.
-- **`@stuffs-logger/sdk` depends on `@stuffs-logger/core` even though it bundles it.**
+- **`@stuffs/logger` depends on `@stuffs/logger-core` even though it bundles it.**
   `tsup`'s `noExternal` inlines the core's _code_, but the SDK's emitted declarations
-  still reference `@stuffs-logger/core` for `IngestBatch` and its leaf modules for the
+  still reference `@stuffs/logger-core` for `IngestBatch` and its leaf modules for the
   taxonomy and redaction types, so the dependency is real for TypeScript consumers. The
   cost is that installing the SDK also installs zod transitively, which the READMEs
   describe as "zero runtime deps". Making the SDK's `.d.ts` fully self-contained would
   let the dependency move to `devDependencies`; `tsup`'s `dts.resolve` cannot do it,
   because its ts-resolver does not honour the tsconfig path mapping the seam relies on.
-- **`@stuffs-logger/core` does not set `"sideEffects": false`.** It could: every module in
+- **`@stuffs/logger-core` does not set `"sideEffects": false`.** It could: every module in
   it is pure. It is left off deliberately for now because the SDK's measured bundle size
   is an acceptance criterion, and that flag changes what a bundler may tree-shake out of
   the core's zod-bearing barrel — a size change worth making on purpose and measuring,

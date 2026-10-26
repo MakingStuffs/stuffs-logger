@@ -17,9 +17,9 @@ import { defineConfig } from "tsup";
  * - The barrel re-exports `./schemas`, which pulls zod in. Consumers who only
  *   want the limits or the log taxonomy can import the leaf and pay nothing
  *   for zod — which is exactly the trade the SDK makes internally, via the
- *   `@stuffs-logger/core/*` path mapping in `logger-sdk/tsconfig.json`.
+ *   `@stuffs/logger-core/*` path mapping in `logger-sdk/tsconfig.json`.
  * - Because the SDK makes that trade, its emitted declarations re-export from
- *   `@stuffs-logger/core/taxonomy`, `/redaction` and `/json`. Those specifiers
+ *   `@stuffs/logger-core/taxonomy`, `/redaction` and `/json`. Those specifiers
  *   have to resolve in a consumer's `node_modules` or the SDK's public types
  *   collapse to `any`. Publishing the leaves is what makes them resolve.
  *

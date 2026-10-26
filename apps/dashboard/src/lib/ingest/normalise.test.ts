@@ -6,7 +6,7 @@ import {
   parseLogEvent,
   type IngestEnvelope,
   type JsonValue,
-} from "@stuffs-logger/core";
+} from "@stuffs/logger-core";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/errors";
@@ -19,8 +19,8 @@ import { normaliseBatch, UNKNOWN_ENVIRONMENT } from "./normalise";
  * around it cannot be exercised any other way. Every other export keeps its
  * real implementation.
  */
-vi.mock("@stuffs-logger/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@stuffs-logger/core")>();
+vi.mock("@stuffs/logger-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@stuffs/logger-core")>();
   return { ...actual, parseLogEvent: vi.fn(actual.parseLogEvent) };
 });
 
@@ -49,7 +49,7 @@ function makeEnvelope(
   overrides: Partial<IngestEnvelope> = {},
 ): IngestEnvelope {
   return {
-    sdk: { name: "@stuffs-logger/sdk", version: "0.1.0" },
+    sdk: { name: "@stuffs/logger", version: "0.1.0" },
     environment: "production",
     source: "browser",
     events,

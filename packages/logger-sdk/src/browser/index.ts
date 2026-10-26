@@ -3,7 +3,7 @@ import { createLoggerWith } from "../logger/create-logger";
 import type { Logger, LoggerOptions } from "../types";
 
 /**
- * `@stuffs-logger/sdk/browser` — the browser-only entry point.
+ * `@stuffs/logger/browser` — the browser-only entry point.
  *
  * Identical API to `.`, minus every byte of Node support. Import this from
  * code you know only ever runs in a document, or let the `browser` condition

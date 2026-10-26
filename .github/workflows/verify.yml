@@ -157,7 +157,7 @@ jobs:
       # `apps/dashboard/playwright.config.ts`. `--with-deps` installs the
       # system libraries the runner image does not carry.
       - name: Install the Playwright browser
-        run: pnpm --filter @stuffs-logger/dashboard exec playwright install --with-deps chromium
+        run: pnpm --filter @stuffs/logger-dashboard exec playwright install --with-deps chromium
 
       # BOTH SUITES, ONE SERVER, ONE INVOCATION. `pnpm test:e2e` builds the
       # SDK the round-trip spec loads and runs Playwright with
