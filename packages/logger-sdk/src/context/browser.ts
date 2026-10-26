@@ -12,7 +12,7 @@ import type { CollectedContext, ContextCollector } from "./collector";
  * incident waiting to happen, and anything beyond this list is the
  * application's to pass explicitly.
  *
- * The device class the dashboard filters on is NOT sent. `@stuffs-logger/core`
+ * The device class the dashboard filters on is NOT sent. `@stuffs/logger-core`
  * derives it server-side from the user agent this collector already reports,
  * precisely so it cannot be a client-supplied — and therefore
  * attacker-supplied — filter value. Computing a second copy here would ship

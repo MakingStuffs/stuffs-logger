@@ -1,8 +1,8 @@
 # Deploying the dashboard
 
-`@stuffs-logger/dashboard` is a standard Next.js 16 application backed by
+`@stuffs/logger-dashboard` is a standard Next.js 16 application backed by
 Postgres. It is **private** and is never published to npm — only
-`@stuffs-logger/core` and `@stuffs-logger/sdk` are (see
+`@stuffs/logger-core` and `@stuffs/logger` are (see
 [`CI-CD.md`](./CI-CD.md)).
 
 This document is deliberately **documentation, not automation**. Nothing in
@@ -79,7 +79,7 @@ generates a migration and never resets a database, which is what makes it the
 only safe command to point at a production database.
 
 ```sh
-pnpm --filter @stuffs-logger/dashboard exec prisma migrate deploy
+pnpm --filter @stuffs/logger-dashboard exec prisma migrate deploy
 ```
 
 It reads `DIRECT_DATABASE_URL`, so that variable must be present wherever you
@@ -121,7 +121,7 @@ deployment's database (the same value `prisma migrate deploy` uses) and leave
 
 ```sh
 DATABASE_URL='postgres://…' \
-  pnpm --filter @stuffs-logger/dashboard user:create-admin -- \
+  pnpm --filter @stuffs/logger-dashboard user:create-admin -- \
   --email you@example.com --name "Your Name"
 ```
 
@@ -169,7 +169,7 @@ change to `src/lib/auth/auth.ts`.
    install can skip the generation step — if you hit
    `Cannot read properties of undefined (reading 'LogLevel')` at runtime, set
    the build command explicitly to
-   `pnpm install && pnpm --filter @stuffs-logger/dashboard build`.
+   `pnpm install && pnpm --filter @stuffs/logger-dashboard build`.
 3. **Environment variables:** set every required variable from the table above
    in the project settings, for Production and Preview separately.
    `DATABASE_URL` should be the pooled connection string and
@@ -178,7 +178,7 @@ change to `src/lib/auth/auth.ts`.
 4. **Migrations:** Vercel does not run them for you. Either run
    `prisma migrate deploy` from your machine against production before
    promoting the deployment, or add it to the build command:
-   `prisma migrate deploy && pnpm --filter @stuffs-logger/dashboard build`.
+   `prisma migrate deploy && pnpm --filter @stuffs/logger-dashboard build`.
    Prefer the former for anything with real data — a migration that runs inside
    a build runs on every preview too.
 5. **Retention cron:** `apps/dashboard/vercel.json` already schedules
@@ -211,10 +211,10 @@ required.
 ```sh
 # 1. Install and build
 pnpm install --frozen-lockfile
-pnpm --filter @stuffs-logger/dashboard build
+pnpm --filter @stuffs/logger-dashboard build
 
 # 2. Apply migrations (reads DIRECT_DATABASE_URL)
-pnpm --filter @stuffs-logger/dashboard exec prisma migrate deploy
+pnpm --filter @stuffs/logger-dashboard exec prisma migrate deploy
 
 # 3. Serve (see below — not `next start`)
 cd apps/dashboard
@@ -232,7 +232,7 @@ automatically, which is what the `cp` above is for; this app has no `public/`
 directory (`/icon.svg` is a build output, not a public file).
 
 `server.js` sets `NODE_ENV=production` itself and reads `PORT` and
-`HOSTNAME`. `pnpm --filter @stuffs-logger/dashboard start` still works — the
+`HOSTNAME`. `pnpm --filter @stuffs/logger-dashboard start` still works — the
 e2e suite uses it — but Next warns that it is not the server to deploy. Vercel
 ignores the standalone setting.
 

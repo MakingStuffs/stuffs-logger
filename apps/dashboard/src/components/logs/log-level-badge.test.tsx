@@ -1,4 +1,4 @@
-import { LOG_LEVELS } from "@stuffs-logger/core/taxonomy";
+import { LOG_LEVELS } from "@stuffs/logger-core/taxonomy";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 

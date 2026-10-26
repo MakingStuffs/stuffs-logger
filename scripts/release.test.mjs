@@ -151,7 +151,7 @@ describe("release.sh --dry-run", () => {
 
     it("bumps the major for a BREAKING CHANGE footer", () => {
       commit(
-        "refactor: move the schemas\n\nBREAKING CHANGE: import from @stuffs-logger/core/schemas",
+        "refactor: move the schemas\n\nBREAKING CHANGE: import from @stuffs/logger-core/schemas",
       );
 
       expect(nextTag()).toBe("v2.0.0");

@@ -1,4 +1,4 @@
-import { ERROR_LEVELS } from "@stuffs-logger/core";
+import { ERROR_LEVELS } from "@stuffs/logger-core";
 import { expect, test } from "@playwright/test";
 
 import { applicationLogsHref } from "@/components/logs/search-params";

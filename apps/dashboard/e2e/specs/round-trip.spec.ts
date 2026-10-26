@@ -12,7 +12,7 @@ import type { StuffsLoggerStats } from "../support/sdk-global";
 /**
  * SDK → ingest → dashboard. The test that proves the product works.
  *
- * Nothing here is stubbed. The real `<script>` build of `@stuffs-logger/sdk`
+ * Nothing here is stubbed. The real `<script>` build of `@stuffs/logger`
  * runs in a real browser, authenticates with a real seeded PUBLIC key, POSTs
  * to the real ingest endpoint, which writes to a real Postgres — and then the
  * event is found through the dashboard's own UI, signed in as a real seeded
@@ -28,7 +28,7 @@ import type { StuffsLoggerStats } from "../support/sdk-global";
  *     it in a browser exercises the CORS and `Origin` path a server-side
  *     caller would skip entirely.
  *  3. It creates no compile-time dependency on the SDK's `dist`. Importing
- *     `@stuffs-logger/sdk/node` from a typechecked spec would make
+ *     `@stuffs/logger/node` from a typechecked spec would make
  *     `pnpm typecheck` fail on a clean checkout until something had built the
  *     package first — a build-order trap for every future contributor. Loading
  *     the bundle as a FILE at run time keeps the dependency where it belongs.
@@ -181,7 +181,7 @@ async function expectBundleBuilt(): Promise<void> {
   } catch {
     throw new Error(
       `The SDK's <script> build is missing at ${GLOBAL_BUNDLE_PATH}. ` +
-        "Build it first:\n\n  pnpm --filter @stuffs-logger/sdk build\n\n" +
+        "Build it first:\n\n  pnpm --filter @stuffs/logger build\n\n" +
         "`pnpm test:e2e` from the repository root does this for you.",
     );
   }

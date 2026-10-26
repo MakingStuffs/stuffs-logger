@@ -18,7 +18,7 @@ import { userEmailSchema, userNameSchema } from "./schemas";
 
 /** How to run it, printed on any usage error. */
 export const CREATE_ADMIN_USAGE =
-  'Usage: pnpm --filter @stuffs-logger/dashboard user:create-admin -- --email you@example.com --name "Your Name"';
+  'Usage: pnpm --filter @stuffs/logger-dashboard user:create-admin -- --email you@example.com --name "Your Name"';
 
 /** The parsed request, or why it was refused. */
 export type CreateAdminRequest =

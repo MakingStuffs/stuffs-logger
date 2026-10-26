@@ -11,7 +11,7 @@ import {
   type JsonValue,
   type LogEventParseResult,
   type LogEventPayload,
-} from "@stuffs-logger/core";
+} from "@stuffs/logger-core";
 import type { Prisma } from "@prisma/client";
 
 import { isApiError } from "@/lib/api/errors";
@@ -36,7 +36,7 @@ import { parseUserAgent } from "./user-agent";
  * and neither is optional:
  *
  *  - **Redaction.** Secret-shaped context keys are replaced with the shared
- *    marker from `@stuffs-logger/core`. The SDK redacts too, but that pass is the
+ *    marker from `@stuffs/logger-core`. The SDK redacts too, but that pass is the
  *    caller's to configure — `redaction: { enabled: false }` switches it off,
  *    and anyone POSTing to the ingest endpoint with a scraped key never ran it
  *    at all. THIS pass is the authoritative one: it runs on every batch, it

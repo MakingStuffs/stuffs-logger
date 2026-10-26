@@ -5,7 +5,7 @@ import {
   PUBLIC_KEY_PREFIX,
   SECRET_KEY_PREFIX,
   type LogSource,
-} from "@stuffs-logger/core";
+} from "@stuffs/logger-core";
 
 import { digestsMatch, sha256Hex } from "@/lib/crypto/digest";
 

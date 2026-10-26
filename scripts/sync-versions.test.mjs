@@ -25,10 +25,10 @@ let rootDir;
  */
 function makeManifest(overrides = {}) {
   return {
-    name: "@stuffs-logger/example",
+    name: "@stuffs/example",
     version: "0.1.0",
     private: true,
-    dependencies: { "@stuffs-logger/core": "workspace:*" },
+    dependencies: { "@stuffs/logger-core": "workspace:*" },
     ...overrides,
   };
 }
@@ -121,7 +121,7 @@ describe("syncVersions", () => {
       "dependencies",
     ]);
     expect(manifest.dependencies).toEqual({
-      "@stuffs-logger/core": "workspace:*",
+      "@stuffs/logger-core": "workspace:*",
     });
   });
 

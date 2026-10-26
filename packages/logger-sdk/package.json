@@ -1,5 +1,5 @@
 {
-  "name": "@stuffs-logger/sdk",
+  "name": "@stuffs/logger",
   "version": "0.1.0",
   "description": "Cross-platform logging client for stuffs-logger: browser, Node and <script> builds with batching, redaction and console capture.",
   "keywords": [
@@ -92,7 +92,7 @@
     "size": "node ./scripts/build-global.mjs"
   },
   "dependencies": {
-    "@stuffs-logger/core": "workspace:*"
+    "@stuffs/logger-core": "workspace:*"
   },
   "devDependencies": {
     "jsdom": "^30.1.3",

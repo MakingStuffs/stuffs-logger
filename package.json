@@ -15,18 +15,18 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "dev": "pnpm --filter @stuffs-logger/dashboard dev",
+    "dev": "pnpm --filter @stuffs/logger-dashboard dev",
     "lint": "eslint scripts && pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run && pnpm -r test",
     "test:unit": "pnpm run test",
-    "test:e2e": "pnpm --filter @stuffs-logger/core --filter @stuffs-logger/sdk build && pnpm --filter @stuffs-logger/dashboard test:e2e",
-    "test:smoke": "pnpm --filter @stuffs-logger/dashboard test:smoke",
+    "test:e2e": "pnpm --filter @stuffs/logger-core --filter @stuffs/logger build && pnpm --filter @stuffs/logger-dashboard test:e2e",
+    "test:smoke": "pnpm --filter @stuffs/logger-dashboard test:smoke",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "release": "bash scripts/release.sh",
     "release:dry-run": "bash scripts/release.sh --dry-run",
-    "release:verify-pack": "pnpm --filter @stuffs-logger/core --filter @stuffs-logger/sdk build && node scripts/verify-pack.mjs",
+    "release:verify-pack": "pnpm --filter @stuffs/logger-core --filter @stuffs/logger build && node scripts/verify-pack.mjs",
     "version:sync": "node scripts/sync-versions.mjs"
   },
   "devDependencies": {

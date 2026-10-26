@@ -1,12 +1,12 @@
 # Changelog
 
-All notable changes to `@stuffs-logger/core`, `@stuffs-logger/sdk` and the self-hosted dashboard. Every package shares one version, so one entry covers all three.
+All notable changes to `@stuffs/logger-core`, `@stuffs/logger` and the self-hosted dashboard. Every package shares one version, so one entry covers all three.
 
 Entries are written by [`scripts/release.sh`](./scripts/release.sh) from the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) on `main` and on `*-rc` branches, and the same notes are published to [GitHub Releases](https://github.com/MakingStuffs/stuffs-logger/releases). Do not edit them here: fix the wording of a commit message before it merges instead.
 
 ## 0.1.0 (2026-10-26)
 
-The baseline every later entry is measured from, written by hand because it predates the release pipeline. It was never published to npm: the first version on npm is the first one the release script cuts after the `v0.1.0` tag.
+The baseline every later entry is measured from, written by hand because it predates the release pipeline. It was published to npm by hand, without provenance, only to create the packages; every later version is published by the release workflow, with provenance.
 
 ### Features
 
@@ -16,7 +16,7 @@ The baseline every later entry is measured from, written by hand because it pred
 * **sdk:** cross-platform logger for Node, browsers and a plain `<script>` tag, with console and error capture and a batched, bounded transport ([7439fad](https://github.com/MakingStuffs/stuffs-logger/commit/7439fad14a36b7176607d48961566f11d61887ea))
 * **dashboard:** self-hosted authentication with Better Auth: email and password, optional Google, sign-up closed by design ([7d2cefe](https://github.com/MakingStuffs/stuffs-logger/commit/7d2cefe2e37a935b9b44110ca757ce93b0d800f3))
 * **dashboard:** local UI component layer, with no third-party UI kit ([5076a5d](https://github.com/MakingStuffs/stuffs-logger/commit/5076a5df3ef9ede8486871edd838d8e17330fc86))
-* **core, sdk:** published to npm as `@stuffs-logger/core` and `@stuffs-logger/sdk`, with provenance attestations, plus CI, release automation, and Playwright e2e and smoke suites ([911e022](https://github.com/MakingStuffs/stuffs-logger/commit/911e022df88cc1eb08ca4da2db0715311ffd640c))
+* **core, sdk:** published to npm as `@stuffs/logger-core` and `@stuffs/logger`, with provenance attestations, plus CI, release automation, and Playwright e2e and smoke suites ([911e022](https://github.com/MakingStuffs/stuffs-logger/commit/911e022df88cc1eb08ca4da2db0715311ffd640c))
 * **dashboard:** admin screens for applications, users, account and API tokens, and a `user:create-admin` command for the first administrator ([c81e9ab](https://github.com/MakingStuffs/stuffs-logger/commit/c81e9ab53f0f134534e4a362c2acd9227562d048))
 * **dashboard:** faster queries on large tables: keyset pagination, a loose index scan for the environment facet (4.3 s to 0.1 ms at 5M rows), single-statement retention batches, and search limited to the last 24 hours by default ([c81e9ab](https://github.com/MakingStuffs/stuffs-logger/commit/c81e9ab53f0f134534e4a362c2acd9227562d048))
 

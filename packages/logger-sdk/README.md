@@ -1,8 +1,8 @@
-# `@stuffs-logger/sdk`
+# `@stuffs/logger`
 
-[![npm](https://img.shields.io/npm/v/@stuffs-logger/sdk)](https://www.npmjs.com/package/@stuffs-logger/sdk)
-[![Node](https://img.shields.io/node/v/@stuffs-logger/sdk)](https://nodejs.org)
-[![Licence](https://img.shields.io/npm/l/@stuffs-logger/sdk)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@stuffs/logger)](https://www.npmjs.com/package/@stuffs/logger)
+[![Node](https://img.shields.io/node/v/@stuffs/logger)](https://nodejs.org)
+[![Licence](https://img.shields.io/npm/l/@stuffs/logger)](./LICENSE)
 
 The stuffs-logger client. One call sets it up, it runs the same way in Node, React,
 Next.js and a plain `<script>` tag, and it will not throw into your code no
@@ -29,7 +29,7 @@ matter what goes wrong.
 ## Install
 
 ```sh
-pnpm add @stuffs-logger/sdk
+pnpm add @stuffs/logger
 ```
 
 You need a dashboard to send to, and an ingest key from it. See
@@ -38,7 +38,7 @@ running one.
 
 ### About that dependency
 
-`package.json` lists exactly one: `@stuffs-logger/core`, the shared wire
+`package.json` lists exactly one: `@stuffs/logger-core`, the shared wire
 contract. Its **code** is inlined at build time, so nothing from it reaches
 your bundle — but the emitted type declarations still refer to it, so the
 dependency is real for TypeScript consumers and cannot be dropped.
@@ -105,7 +105,7 @@ import {
   captureConsole,
   captureErrors,
   createLogger,
-} from "@stuffs-logger/sdk/node";
+} from "@stuffs/logger/node";
 
 const logger = createLogger({
   apiKey: process.env.STUFFS_LOGGER_API_KEY, // slg_sec_…
@@ -149,11 +149,7 @@ Create the logger once, at module scope, and export it.
 
 ```ts
 // src/lib/logger.ts
-import {
-  captureConsole,
-  captureErrors,
-  createLogger,
-} from "@stuffs-logger/sdk";
+import { captureConsole, captureErrors, createLogger } from "@stuffs/logger";
 
 export const logger = createLogger({
   apiKey: import.meta.env.VITE_STUFFS_LOGGER_KEY, // slg_pub_…
@@ -197,7 +193,7 @@ client components. Use two modules so the browser never sees the secret key.
 ```ts
 // lib/logger.server.ts
 import "server-only";
-import { captureErrors, createLogger } from "@stuffs-logger/sdk/node";
+import { captureErrors, createLogger } from "@stuffs/logger/node";
 
 export const logger = createLogger({
   apiKey: process.env.STUFFS_LOGGER_API_KEY, // slg_sec_… — server env var, not NEXT_PUBLIC_
@@ -216,7 +212,7 @@ import {
   captureConsole,
   captureErrors,
   createLogger,
-} from "@stuffs-logger/sdk/browser";
+} from "@stuffs/logger/browser";
 
 export const logger = createLogger({
   apiKey: process.env.NEXT_PUBLIC_STUFFS_LOGGER_KEY, // slg_pub_… — see "Keys" above
@@ -259,7 +255,7 @@ No build step, no module system. The bundle configures itself from its own
 
 ```html
 <script
-  src="https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js"
+  src="https://unpkg.com/@stuffs/logger/dist/stuffs-logger.global.js"
   data-slg-key="slg_pub_…"
   data-slg-endpoint="https://logs.example.com"
   data-slg-environment="production"
@@ -269,7 +265,7 @@ No build step, no module system. The bundle configures itself from its own
 That is the whole setup: `console.log`/`warn`/`error`, `window.onerror` and
 unhandled promise rejections are all captured from that point on.
 
-Pin a version (`@stuffs-logger/sdk@1.2.3/dist/…`) or serve the file from your
+Pin a version (`@stuffs/logger@1.2.3/dist/…`) or serve the file from your
 own origin rather than tracking whatever the CDN's latest happens to be — the
 tag above executes with your page's privileges, so whoever controls that URL
 controls your page. Once there are published versions to pin, add an
@@ -281,7 +277,7 @@ Pin or self-host this URL as well; it is the same tag, with the same
 privileges:
 
 ```html
-<script src="https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js"></script>
+<script src="https://unpkg.com/@stuffs/logger/dist/stuffs-logger.global.js"></script>
 <script>
   StuffsLogger.init({
     apiKey: "slg_pub_…",
@@ -433,11 +429,11 @@ so it cannot re-enter the pipeline.
 
 Three, exactly as the package's `exports` map declares them:
 
-| Import                       | Build                                                               |
-| ---------------------------- | ------------------------------------------------------------------- |
-| `@stuffs-logger/sdk`         | Isomorphic; a bundler's `browser` condition picks the browser build |
-| `@stuffs-logger/sdk/browser` | DOM only                                                            |
-| `@stuffs-logger/sdk/node`    | Node only                                                           |
+| Import                   | Build                                                               |
+| ------------------------ | ------------------------------------------------------------------- |
+| `@stuffs/logger`         | Isomorphic; a bundler's `browser` condition picks the browser build |
+| `@stuffs/logger/browser` | DOM only                                                            |
+| `@stuffs/logger/node`    | Node only                                                           |
 
 ESM and CJS are both published for all three, with matching `.d.ts` and
 `.d.cts`. You only need `/browser` explicitly if your bundler ignores export
@@ -445,8 +441,8 @@ conditions.
 
 The `<script>` build is deliberately _not_ an import path. It is the minified
 IIFE at `dist/stuffs-logger.global.js` — on a CDN,
-`https://unpkg.com/@stuffs-logger/sdk/dist/stuffs-logger.global.js`, which is
-also what bare `https://unpkg.com/@stuffs-logger/sdk` resolves to — and it only
+`https://unpkg.com/@stuffs/logger/dist/stuffs-logger.global.js`, which is
+also what bare `https://unpkg.com/@stuffs/logger` resolves to — and it only
 does its job when loaded by a `<script>` tag: it assigns `window.StuffsLogger`
 as a side effect and exports nothing, so importing it from a bundled module
 would define no bindings and, under tree-shaking, might not run at all. Use the
@@ -464,7 +460,7 @@ alongside the dashboard that receives these events. Bugs and questions:
 [github.com/MakingStuffs/stuffs-logger/issues](https://github.com/MakingStuffs/stuffs-logger/issues).
 
 The wire contract's limits — batch size, field lengths, body size — live in
-`@stuffs-logger/core` and are imported by both ends, never restated, so the
+`@stuffs/logger-core` and are imported by both ends, never restated, so the
 client and the server cannot disagree about them.
 
 MIT licensed.

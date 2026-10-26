@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * `scripts/release.sh` computes a single version for the repository, and this
  * repository ships that one version everywhere: the root, both published
  * packages and the (private) dashboard. Lockstep is what lets
- * `@stuffs-logger/sdk@1.4.0` state `"@stuffs-logger/core": "1.4.0"` and mean
+ * `@stuffs/logger@1.4.0` state `"@stuffs/logger-core": "1.4.0"` and mean
  * it — pnpm rewrites the SDK's `workspace:*` to the core's concrete version at
  * pack time, so if the two manifests ever disagreed the published SDK would
  * quietly depend on a core that was never released.

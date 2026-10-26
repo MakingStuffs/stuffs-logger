@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { SECRET_KEY_PREFIX } from "@stuffs-logger/core";
+import { SECRET_KEY_PREFIX } from "@stuffs/logger-core";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 

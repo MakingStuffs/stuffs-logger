@@ -3,7 +3,7 @@ import type {
   LogLevel,
   LoggerKind,
   LogSource,
-} from "@stuffs-logger/core";
+} from "@stuffs/logger-core";
 
 /**
  * The shapes the dashboard is allowed to see.

@@ -2,7 +2,7 @@
 #
 # `scripts/release.sh` reads the conventional commits since the last stable
 # tag, computes the next version, writes it into all four manifests, builds
-# and audits `@stuffs-logger/core` and `@stuffs-logger/sdk`, commits the
+# and audits `@stuffs/logger-core` and `@stuffs/logger`, commits the
 # changelog and the version bump back to the branch, tags it, publishes both
 # packages to public npm, and cuts a GitHub Release. The order — build and
 # audit BEFORE the tag, publish after — is set in that script and is what
@@ -50,9 +50,10 @@ jobs:
     # THE ONE CONTROL THAT DECIDES WHO MAY PUBLISH.
     #
     # This job is triggered by a push to `main` or to any branch matching
-    # `*-rc`, and it holds publish rights to the whole `@stuffs-logger`
-    # scope — a granular npm token today, an OIDC trust relationship once
-    # trusted publishing is configured. Without an environment, that makes
+    # `*-rc`, and it holds publish rights to both published packages through
+    # npm trusted publishing — no token, an OIDC trust relationship naming
+    # this repository, this workflow file and this environment. Without
+    # environment protection, that makes
     # "publish to the public registry" reachable by anyone with repository
     # WRITE access — a strictly lower privilege — by pushing a branch named
     # `anything-rc`. `needs: verify` is not a control against that actor: the
@@ -62,23 +63,19 @@ jobs:
     # maintainer can gate. THE GATING IS REPOSITORY CONFIGURATION, NOT THIS
     # FILE, and until it is done this key changes nothing — docs/CI-CD.md
     # ("Before the first release") states exactly what must be set: required
-    # reviewers, the deployment-branch restriction, `NPM_TOKEN` moved to an
-    # ENVIRONMENT secret, and a ruleset restricting who may create `*-rc`
-    # branches.
+    # reviewers, the deployment-branch restriction, and a ruleset restricting
+    # who may create `*-rc` branches.
     environment:
       name: npm-publish
-      url: https://www.npmjs.com/package/@stuffs-logger/sdk
+      url: https://www.npmjs.com/package/@stuffs/logger
 
     # Exactly the scopes the release script needs:
     permissions:
       contents: write # the version commit, the git tag, the GitHub Release
-      # The OIDC token npm signs the provenance attestation with — and, once
-      # trusted publishing is configured on npmjs.com, the token npm exchanges
-      # for publish rights, replacing NPM_TOKEN entirely. Provenance is what
-      # makes a stolen NPM_TOKEN detectable rather than silent: a version
-      # published from anywhere other than this workflow, on this repository,
-      # at this ref carries no attestation and npm says so on the package
-      # page. `scripts/release.sh` passes `--provenance` to the publish.
+      # THE NPM CREDENTIAL. npm exchanges the job's OIDC identity for a
+      # short-lived publish token (trusted publishing), and the provenance
+      # attestation is signed with it. There is no npm token anywhere:
+      # nothing to leak, rotate or let expire.
       id-token: write
 
     env:
@@ -117,10 +114,11 @@ jobs:
           # The same major `verify.yml` tests on.
           node-version: "24"
           cache: pnpm
-          # Writes a runner-level `.npmrc` (under $RUNNER_TEMP, not in the
-          # checkout) that makes `pnpm whoami` and `pnpm publish` read
-          # NODE_AUTH_TOKEN. Without it the publish step is anonymous.
-          registry-url: https://registry.npmjs.org
+          # NO `registry-url`. It writes a runner-level npm config holding
+          # `_authToken=${NODE_AUTH_TOKEN}` — and with no token set,
+          # setup-node fills in a placeholder. There is no token here: npm
+          # trusted publishing authenticates the publish through OIDC, and a
+          # placeholder token in the config is something for it to trip on.
 
       # ONLY WHAT THE RELEASE NEEDS, AND NO INSTALL SCRIPTS.
       #
@@ -140,8 +138,8 @@ jobs:
       - name: Install the release toolchain
         run: >-
           pnpm install --frozen-lockfile --ignore-scripts
-          --filter @stuffs-logger/core
-          --filter @stuffs-logger/sdk
+          --filter @stuffs/logger-core
+          --filter @stuffs/logger
 
       - name: Release
         # The whole pipeline, in `scripts/release.sh`. Run with `bash`
@@ -152,18 +150,9 @@ jobs:
           # Authenticates the version commit's push and, through `gh`,
           # creates the GitHub Release.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # The npm credential. A GRANULAR access token scoped to the
-          # `@stuffs-logger/*` packages with "bypass 2FA", which EXPIRES —
-          # docs/CI-CD.md records the date and the renewal steps — or nothing
-          # at all once trusted publishing is configured on npmjs.com, when
-          # this line is deleted and the OIDC token above takes its place.
-          #
-          # THE ONLY PLACE THIS SECRET APPEARS. It is scoped to this one step,
-          # never echoed, never written to a file this workflow keeps, and
-          # never present in any job that uploads an artifact. It is exercised
-          # by `pnpm whoami` before the script writes anything, so an expired
-          # token fails the run before anything is tagged.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # No npm token: the publish authenticates through `id-token: write`
+          # (npm trusted publishing), and the script proves npm accepts it for
+          # both packages before anything is tagged.
           # The identity on the version commit and the tag; the runner has
           # none configured, so without these the commit fails.
           # `41898282+github-actions[bot]` is the account GitHub

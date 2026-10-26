@@ -5,7 +5,7 @@ import { createLoggerWith } from "./logger/create-logger";
 import type { Logger, LoggerOptions } from "./types";
 
 /**
- * `@stuffs-logger/sdk` — the isomorphic entry point.
+ * `@stuffs/logger` — the isomorphic entry point.
  *
  * Picks its runtime adapter when the logger is created, so the same import
  * works in a Next.js server component, a route handler and a client

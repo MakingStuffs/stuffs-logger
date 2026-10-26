@@ -1,4 +1,4 @@
-import { ERROR_LEVELS } from "@stuffs-logger/core";
+import { ERROR_LEVELS } from "@stuffs/logger-core";
 import type { Prisma } from "@prisma/client";
 
 import { assertActiveViewer } from "@/lib/access";

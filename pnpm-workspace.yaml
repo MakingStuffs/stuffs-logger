@@ -56,7 +56,7 @@ allowBuilds:
 # exact lockstep version the release just published.
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
-  - "@stuffs-logger/*"
+  - "@stuffs/*"
 
 # VERSION OVERRIDES for transitive dependencies with published advisories
 # whose dependents pin a range that excludes the fix. Each entry names the

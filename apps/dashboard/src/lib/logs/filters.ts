@@ -1,5 +1,5 @@
-import { DEVICE_TYPES, LOG_LEVELS, LOG_SOURCES } from "@stuffs-logger/core";
-import type { DeviceType, LogLevel, LogSource } from "@stuffs-logger/core";
+import { DEVICE_TYPES, LOG_LEVELS, LOG_SOURCES } from "@stuffs/logger-core";
+import type { DeviceType, LogLevel, LogSource } from "@stuffs/logger-core";
 import { z } from "zod";
 
 /**
