@@ -90,6 +90,13 @@ is expanded in its own section below.
    git tag v0.1.0 <the commit that is 0.1.0> && git push origin v0.1.0
    ```
 
+   **Decided: the 0.x line continues.** `CHANGELOG.md` already carries a
+   hand-written `0.1.0` entry, so tag the commit that added it (or any later
+   commit before the merge). Then merge with a **merge commit**, not a squash
+   or rebase merge: semantic-release only counts tags reachable from `main`,
+   and both of those rewrite the tagged commit, which leaves the tag outside
+   `main`'s history and brings back `1.0.0`.
+
    See "Release channels" and `FOLLOW-UPS.md` §9.
 
 4. **Choose the npm credential** — trusted publishing (preferred, no secret)

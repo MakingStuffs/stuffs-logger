@@ -123,9 +123,11 @@ environment.
 - **Before the first push to `main`, decide the first version.** semantic-release has no
   tags to read (`git tag -l` is empty), so it treats this as a first release and
   publishes `1.0.0`, not `0.2.0`, ignoring the `0.1.0` in the manifests. To continue the
-  0.x line run `git tag v0.1.0 <commit> && git push origin v0.1.0` first. The merge of
-  this branch IS the first push: the checklist in [`CI-CD.md`](./CI-CD.md) ("Before the
-  first release") must be worked through before it, including protecting the
+  0.x line run `git tag v0.1.0 <commit> && git push origin v0.1.0` first. **Decided:
+  continue 0.x.** `CHANGELOG.md` has the hand-written `0.1.0` entry; pushing the tag and
+  merging with a merge commit are still to do (`CI-CD.md`, "Before the first release",
+  item 3). The merge of this branch IS the first push: the checklist in
+  [`CI-CD.md`](./CI-CD.md) ("Before the first release") must be worked through before it, including protecting the
   `npm-publish` environment and restricting who may create `*-rc` branches, because any
   push to either publishes to public npm.
 - **npm credential.** `NPM_TOKEN` must be a granular token that expires (record the

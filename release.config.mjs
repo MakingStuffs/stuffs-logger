@@ -1,4 +1,19 @@
 /**
+ * The header `@semantic-release/changelog` keeps at the top of CHANGELOG.md.
+ * Each release's notes are inserted directly below it; without it the header
+ * would be pushed down beneath every new entry. The plugin only recognises the
+ * header if the file starts with exactly this text, so
+ * `scripts/changelog.test.mjs` fails the build if the two drift apart.
+ */
+export const CHANGELOG_TITLE = [
+  "# Changelog",
+  "",
+  "All notable changes to `@stuffs-logger/core`, `@stuffs-logger/sdk` and the self-hosted dashboard. Every package shares one version, so one entry covers all three.",
+  "",
+  "Entries are written by [semantic-release](https://semantic-release.gitbook.io) from the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) on `main` and on `*-rc` branches, and the same notes are published to [GitHub Releases](https://github.com/MakingStuffs/stuffs-logger/releases). Do not edit them here: fix the wording of a commit message before it merges instead.",
+].join("\n");
+
+/**
  * semantic-release configuration.
  *
  * The version is computed from the Conventional Commits already in this
@@ -30,7 +45,10 @@ export default {
       "@semantic-release/release-notes-generator",
       { preset: "conventionalcommits" },
     ],
-    ["@semantic-release/changelog", { changelogFile: "CHANGELOG.md" }],
+    [
+      "@semantic-release/changelog",
+      { changelogFile: "CHANGELOG.md", changelogTitle: CHANGELOG_TITLE },
+    ],
 
     /**
      * `${nextRelease.version}` is a semantic-release template, not a shell
