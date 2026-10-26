@@ -34,6 +34,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY="https://registry.npmjs.org"
+PUBLISHED_PACKAGES=("@stuffs/logger-core" "@stuffs/logger")
+PACKAGE_FILTERS=(--filter "${PUBLISHED_PACKAGES[0]}" --filter "${PUBLISHED_PACKAGES[1]}")
 
 DRY_RUN=false
 if [[ "${1:-}" == "--dry-run" ]]; then
@@ -194,8 +196,24 @@ fi
 [[ -n "${GITHUB_TOKEN:-}" ]] || fail "GITHUB_TOKEN is not set"
 git diff --quiet HEAD || fail "the working tree has uncommitted changes"
 
-# Fails closed when the npm credential is missing, expired or revoked.
-pnpm whoami --registry "$REGISTRY" >/dev/null || fail "npm rejected the credential (pnpm whoami)"
+# NPM TRUSTS THIS WORKFLOW, PROVEN BEFORE THE TAG. Publishing uses npm
+# trusted publishing: no token, just the job's OIDC identity, which npm
+# exchanges for a short-lived publish token per package. This runs that same
+# exchange now, so a missing `id-token: write` or a package whose trusted
+# publisher does not name this repository, workflow and environment fails
+# here — not at the publish, after the tag a re-run cannot get past.
+[[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]] || fail "no OIDC token: the job needs id-token: write"
+ID_TOKEN="$(curl --fail --silent --show-error --get \
+  --header "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+  --data-urlencode "audience=npm:${REGISTRY#https://}" \
+  "$ACTIONS_ID_TOKEN_REQUEST_URL" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).value ?? ""')"
+[[ -n "$ID_TOKEN" ]] || fail "GitHub returned no OIDC token"
+for package in "${PUBLISHED_PACKAGES[@]}"; do
+  curl --fail --silent --output /dev/null --request POST \
+    --header "Authorization: Bearer ${ID_TOKEN}" \
+    "${REGISTRY}/-/npm/v1/oidc/token/exchange/package/${package/\//%2f}" ||
+    fail "npm does not trust this workflow to publish ${package}: check its trusted publisher on npmjs.com"
+done
 
 node "${SCRIPT_DIR}/sync-versions.mjs" "$VERSION"
 
@@ -207,7 +225,7 @@ awk -v notes="$NOTES_FILE" '
 ' CHANGELOG.md >CHANGELOG.md.next
 mv CHANGELOG.md.next CHANGELOG.md
 
-pnpm --filter @stuffs/logger-core --filter @stuffs/logger build
+pnpm "${PACKAGE_FILTERS[@]}" build
 node "${SCRIPT_DIR}/verify-pack.mjs"
 
 # Only the changelog and the manifests sync-versions.mjs rewrote; anything
@@ -230,8 +248,10 @@ git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${AUTH}" \
   push --atomic origin "HEAD:refs/heads/${BRANCH}" "refs/tags/${TAG}"
 
 # pnpm publishes in dependency order — core before SDK, because the SDK pins
-# the core at this exact version.
-pnpm --filter @stuffs/logger-core --filter @stuffs/logger publish \
+# the core at this exact version. It authenticates through the same OIDC
+# exchange checked above; `--provenance` would be automatic under trusted
+# publishing, and is explicit so a toolchain that silently skipped it fails.
+pnpm "${PACKAGE_FILTERS[@]}" publish \
   --access public --provenance --no-git-checks --tag "$DIST_TAG"
 
 PRERELEASE_FLAG="--latest"

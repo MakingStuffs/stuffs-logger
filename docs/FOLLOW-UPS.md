@@ -128,12 +128,12 @@ environment.
   [`CI-CD.md`](./CI-CD.md) ("Before the first release") must be worked through before it, including protecting the
   `npm-publish` environment and restricting who may create `*-rc` branches, because any
   push to either publishes to public npm.
-- **npm credential.** `NPM_TOKEN` must be a granular token that expires (record the
-  expiry) or be replaced by npm trusted publishing (`CI-CD.md`, "npm credentials"). The
-  release runs `pnpm whoami` before writing anything, so an expired token fails before
-  the tag is pushed rather than after. After the first rc publish confirm provenance with
-  `npm view @stuffs/logger@<version> dist.attestations`; if absent, switch the
-  publish to the `npm publish` form documented there.
+- **npm credential: trusted publishing, no token.** Before the first CI release, publish
+  `0.1.0` by hand with your own 2FA to create both packages, then add a trusted publisher
+  to each (`CI-CD.md`, "npm credentials"). The release script checks the trust exchange
+  for both packages before tagging. After the first CI publish confirm provenance with
+  `npm view @stuffs/logger@<version> dist.attestations`; if absent, switch the publish to
+  the `npm publish` form documented there.
 - **`@stuffs/logger` depends on `@stuffs/logger-core` even though it bundles it.**
   `tsup`'s `noExternal` inlines the core's _code_, but the SDK's emitted declarations
   still reference `@stuffs/logger-core` for `IngestBatch` and its leaf modules for the

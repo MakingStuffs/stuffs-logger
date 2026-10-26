@@ -232,8 +232,9 @@ commits, and the notes also go to
 release adds its entry above the previous one, below the header; nothing in
 it is edited by hand.
 
-Setting up a fork means one npm automation token and a branch-protection
-allowance for the release actor — both in [`docs/CI-CD.md`](./docs/CI-CD.md).
+Setting up a fork means an npm trusted publisher for each package (no token)
+and a branch-protection allowance for the release actor — both in
+[`docs/CI-CD.md`](./docs/CI-CD.md).
 
 ## Contributing
 

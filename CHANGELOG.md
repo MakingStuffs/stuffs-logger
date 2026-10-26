@@ -6,7 +6,7 @@ Entries are written by [`scripts/release.sh`](./scripts/release.sh) from the [Co
 
 ## 0.1.0 (2026-10-26)
 
-The baseline every later entry is measured from, written by hand because it predates the release pipeline. It was never published to npm: the first version on npm is the first one the release script cuts after the `v0.1.0` tag.
+The baseline every later entry is measured from, written by hand because it predates the release pipeline. It was published to npm by hand, without provenance, only to create the packages; every later version is published by the release workflow, with provenance.
 
 ### Features
 
