@@ -90,12 +90,20 @@ export type ClientIpSource = Pick<Headers, "get">;
 
 const ALLOWED: SignInThrottleResult = { allowed: true, retryAfterSeconds: 0 };
 
-/** Drops expired windows, then the oldest insertions if still over cap. */
+/**
+ * Drops expired windows, then the oldest insertions if still over cap.
+ *
+ * The map is kept in `startedAt` order ({@link countAttempt} re-inserts a
+ * window it restarts), so the expiry sweep stops at the first live window.
+ * Scanning the whole map instead would make every insertion past the cap
+ * cost the full map — quadratic under exactly the churn the cap is for.
+ */
 function evictIfNeeded(now: number): void {
   if (windows.size < MAX_TRACKED_WINDOWS) return;
 
   for (const [key, state] of windows) {
-    if (now - state.startedAt >= SIGN_IN_WINDOW_MS) windows.delete(key);
+    if (now - state.startedAt < SIGN_IN_WINDOW_MS) break;
+    windows.delete(key);
   }
 
   // Still full of live windows: drop the oldest insertion, which `Map`
@@ -137,6 +145,9 @@ function countAttempt(
   const existing = windows.get(key);
 
   if (existing === undefined || now - existing.startedAt >= SIGN_IN_WINDOW_MS) {
+    // Delete before re-setting: `set` on an existing key keeps its old
+    // position, and eviction relies on the map being in `startedAt` order.
+    windows.delete(key);
     evictIfNeeded(now);
     windows.set(key, { startedAt: now, count: 1 });
     return ALLOWED;
