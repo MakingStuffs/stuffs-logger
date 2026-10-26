@@ -205,6 +205,15 @@ export function consumeSignInAttempt(
 
   const keys = windowKeys(account, clientIp);
 
+  // NO TRUSTED ADDRESS, NO TIGHT WINDOW. "Unknown" distinguishes nobody, so a
+  // tight window keyed on it would be shared by every caller — and anyone who
+  // knows a colleague's email could lock them out with ten wrong guesses. Only
+  // the looser account ceiling applies: a lockout then costs five times the
+  // attempts, and the ceiling still bounds guessing.
+  if (clientIp === null) {
+    return countAttempt(keys.account, SIGN_IN_MAX_ATTEMPTS_PER_ACCOUNT, now);
+  }
+
   // The client window decides first, and a refusal stops here: an attempt
   // that never reaches the hash is not one the account window should count.
   const byClient = countAttempt(keys.client, SIGN_IN_MAX_ATTEMPTS, now);

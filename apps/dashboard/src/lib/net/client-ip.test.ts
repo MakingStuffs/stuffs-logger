@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveClientIp, trustedProxyHops } from "./client-ip";
+import {
+  proxyTrustWarning,
+  resolveClientIp,
+  trustedProxyHops,
+} from "./client-ip";
 
 function forwardedFor(value: string): Headers {
   return new Headers({ "x-forwarded-for": value });
@@ -73,4 +77,28 @@ describe("resolveClientIp", () => {
       expect(resolveClientIp(forwardedFor(`6.6.6.6,${entry}`), 1)).toBeNull();
     },
   );
+});
+
+describe("proxyTrustWarning", () => {
+  it("warns a production server that trusts no proxy", () => {
+    expect(proxyTrustWarning({ NODE_ENV: "production" })).toMatch(
+      /TRUSTED_PROXY_HOPS is not set/,
+    );
+  });
+
+  it("is quiet once a proxy is trusted", () => {
+    expect(
+      proxyTrustWarning({ NODE_ENV: "production", TRUSTED_PROXY_HOPS: "1" }),
+    ).toBeNull();
+  });
+
+  it("is quiet on Vercel, which is trusted by default", () => {
+    expect(
+      proxyTrustWarning({ NODE_ENV: "production", VERCEL: "1" }),
+    ).toBeNull();
+  });
+
+  it("is quiet outside production", () => {
+    expect(proxyTrustWarning({ NODE_ENV: "development" })).toBeNull();
+  });
 });

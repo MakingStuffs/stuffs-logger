@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth/session";
 import {
   resetSignInThrottle,
   SIGN_IN_MAX_ATTEMPTS,
+  SIGN_IN_MAX_ATTEMPTS_PER_ACCOUNT,
 } from "@/lib/auth/sign-in-throttle";
 import { prisma } from "@/lib/db";
 
@@ -201,21 +202,49 @@ describe("changeOwnPasswordAction", () => {
     });
   });
 
-  it("throttles repeated wrong guesses before they reach the hash", async () => {
-    wrongCurrentPassword();
+  it("throttles repeated wrong guesses before they reach the hash, behind a trusted proxy", async () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "1");
+    try {
+      wrongCurrentPassword();
 
-    for (let attempt = 0; attempt < SIGN_IN_MAX_ATTEMPTS; attempt += 1) {
-      await changeOwnPasswordAction(IDLE, formOf(VALID_CHANGE));
+      for (let attempt = 0; attempt < SIGN_IN_MAX_ATTEMPTS; attempt += 1) {
+        await changeOwnPasswordAction(IDLE, formOf(VALID_CHANGE));
+      }
+      vi.mocked(auth.api.changePassword).mockClear();
+
+      const result = await changeOwnPasswordAction(IDLE, formOf(VALID_CHANGE));
+
+      expect(result).toMatchObject({
+        status: "error",
+        message: expect.stringContaining("Too many attempts"),
+      });
+      expect(auth.api.changePassword).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
     }
-    vi.mocked(auth.api.changePassword).mockClear();
+  });
 
-    const result = await changeOwnPasswordAction(IDLE, formOf(VALID_CHANGE));
+  it("still throttles at the account ceiling when no proxy is trusted", async () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "0");
+    try {
+      wrongCurrentPassword();
 
-    expect(result).toMatchObject({
-      status: "error",
-      message: expect.stringContaining("Too many attempts"),
-    });
-    expect(auth.api.changePassword).not.toHaveBeenCalled();
+      for (
+        let attempt = 0;
+        attempt < SIGN_IN_MAX_ATTEMPTS_PER_ACCOUNT;
+        attempt += 1
+      ) {
+        await changeOwnPasswordAction(IDLE, formOf(VALID_CHANGE));
+      }
+      vi.mocked(auth.api.changePassword).mockClear();
+
+      const result = await changeOwnPasswordAction(IDLE, formOf(VALID_CHANGE));
+
+      expect(result).toMatchObject({ status: "error" });
+      expect(auth.api.changePassword).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("never echoes a password in its result", async () => {

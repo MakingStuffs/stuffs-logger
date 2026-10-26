@@ -39,7 +39,7 @@ happens if you get it wrong:
 | `GOOGLE_CLIENT_ID`     | No                   | Google sign-in. Set **both** or neither: the provider is registered only when the pair is complete, and the sign-in page only offers the button when it is.                                                                                                                                                                                                                                                                                                                                        |
 | `GOOGLE_CLIENT_SECRET` | No                   | As above. The redirect URI to register with Google is `${BETTER_AUTH_URL}/api/auth/callback/google`.                                                                                                                                                                                                                                                                                                                                                                                               |
 | `CRON_SECRET`          | If you run retention | The raw API token whose SHA-256 digest is a live row in `api_tokens`. Sent as `Authorization: Bearer <value>` to `/api/cron/retention`.                                                                                                                                                                                                                                                                                                                                                            |
-| `TRUSTED_PROXY_HOPS`   | Behind a proxy       | How many reverse proxies in front of the app append to `X-Forwarded-For` and may be trusted — usually `1`. The sign-in and ingest throttles read the client address from that many entries from the RIGHT, never the client-supplied first entry. Unset means no proxy is trusted: the ingest invalid-key throttle stands down and sign-in throttling keys on the account alone. Defaults to `1` on Vercel.                                                                                        |
+| `TRUSTED_PROXY_HOPS`   | Behind a proxy       | How many reverse proxies in front of the app append to `X-Forwarded-For` and may be trusted — usually `1`. The sign-in and ingest throttles read the client address from that many entries from the RIGHT, never the client-supplied first entry. Unset means no proxy is trusted: the ingest invalid-key throttle stands down, sign-in throttling applies only the 50-per-account ceiling, and the server logs a warning at start. Defaults to `1` on Vercel.                                     |
 
 ### Database connection pooling
 
@@ -259,8 +259,10 @@ Notes for a self-managed host:
   per minute, then `429` before any key lookup) read the client from that
   many entries from the right (`src/lib/net/client-ip.ts`). With the variable
   unset nothing is trusted: the ingest throttle stands down rather than key on
-  an address a caller chose, and sign-in throttling keys on the account alone
-  at its strict ceiling. Do not set it when the app is exposed directly with
+  an address a caller chose, and sign-in throttling applies only the looser
+  per-account ceiling (50 attempts per 15 minutes), so a stranger cannot lock
+  a colleague out with ten guesses. A production server that trusts no proxy
+  logs a warning at start. Do not set it when the app is exposed directly with
   no proxy — Next passes a client-supplied header through untouched. Like the
   other in-memory limiters these are per instance and reset on restart, so a
   WAF or edge rate limit on `/api/v1/ingest` is still recommended as the

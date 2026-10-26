@@ -95,17 +95,25 @@ describe("consumeSignInAttempt", () => {
     expect(consumeSignInAttempt(VICTIM, VICTIM_IP, START).allowed).toBe(true);
   });
 
-  it("shares one client window per account when no address is known", () => {
-    // "Unknown" is not a network position that distinguishes anybody, so
-    // address-less callers fall back to the tight per-account ceiling.
+  it("applies only the account ceiling when no address is known", () => {
+    // "Unknown" is not a network position that distinguishes anybody, so a
+    // tight window keyed on it would let one stranger lock the account with
+    // ten guesses. Only the looser account ceiling counts.
     exhaustClientWindow(VICTIM, null);
+    expect(consumeSignInAttempt(VICTIM, null, START).allowed).toBe(true);
 
+    for (
+      let attempt = SIGN_IN_MAX_ATTEMPTS + 2;
+      attempt <= SIGN_IN_MAX_ATTEMPTS_PER_ACCOUNT;
+      attempt += 1
+    ) {
+      expect(consumeSignInAttempt(VICTIM, null, START).allowed).toBe(true);
+    }
     expect(consumeSignInAttempt(VICTIM, null, START).allowed).toBe(false);
   });
 
   it("does not let address-less callers lock out a caller with an address", () => {
     exhaustClientWindow(VICTIM, null);
-    expect(consumeSignInAttempt(VICTIM, null, START).allowed).toBe(false);
 
     expect(consumeSignInAttempt(VICTIM, VICTIM_IP, START).allowed).toBe(true);
   });
@@ -246,9 +254,15 @@ describe("resolveClientIp", () => {
     vi.stubEnv("VERCEL", undefined);
 
     // With no trusted proxy every invented address resolves to "unknown", so
-    // all of them draw on the one strict window for the account.
-    for (let attempt = 0; attempt < SIGN_IN_MAX_ATTEMPTS; attempt += 1) {
-      const forged = new Headers({ "x-forwarded-for": `203.0.113.${attempt}` });
+    // all of them draw on the one account ceiling.
+    for (
+      let attempt = 0;
+      attempt < SIGN_IN_MAX_ATTEMPTS_PER_ACCOUNT;
+      attempt += 1
+    ) {
+      const forged = new Headers({
+        "x-forwarded-for": `203.0.113.${attempt}`,
+      });
       expect(
         consumeSignInAttempt("victim@example.test", resolveClientIp(forged))
           .allowed,

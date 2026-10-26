@@ -38,6 +38,33 @@ describe("register", () => {
     await expect(register()).resolves.toBeUndefined();
   });
 
+  it("warns, but still starts, when a production server trusts no proxy", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const register = await loadRegister({
+      ...COMPLETE,
+      TRUSTED_PROXY_HOPS: undefined,
+      VERCEL: undefined,
+    });
+
+    await expect(register()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("TRUSTED_PROXY_HOPS is not set"),
+    );
+    warn.mockRestore();
+  });
+
+  it("starts quietly when a proxy is trusted", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const register = await loadRegister({
+      ...COMPLETE,
+      TRUSTED_PROXY_HOPS: "1",
+    });
+
+    await register();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("refuses to start a production server without BETTER_AUTH_URL", async () => {
     const register = await loadRegister({
       ...COMPLETE,

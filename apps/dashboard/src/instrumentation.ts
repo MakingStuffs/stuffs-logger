@@ -26,4 +26,10 @@ export async function register(): Promise<void> {
     await import("@/constants/environment");
 
   assertProductionAuthEnvironment(process.env);
+
+  // Not a refusal: running with no proxy in front is legitimate. Forgetting
+  // the variable behind one quietly weakens the throttles, so say so once.
+  const { proxyTrustWarning } = await import("@/lib/net/client-ip");
+  const warning = proxyTrustWarning(process.env);
+  if (warning !== null) console.warn(warning);
 }

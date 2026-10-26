@@ -84,8 +84,10 @@ per-address gate (at least five distinct addresses) still lock the account from
 everywhere for the window, and a successful sign-in by the owner resets both windows. A
 durable shared store would also allow keying on verified rather than header-claimed
 addresses. Addresses come only from `X-Forwarded-For` entries a trusted proxy appended
-(`TRUSTED_PROXY_HOPS`, `src/lib/net/client-ip.ts`); with no trusted proxy every attempt is
-keyed on the account alone, and the ingest invalid-key throttle stands down. A shared
+(`TRUSTED_PROXY_HOPS`, `src/lib/net/client-ip.ts`); with no trusted proxy only the 50-attempt
+account ceiling applies (a tight shared window would let anyone lock an account with
+ten guesses), the server logs a warning at start, and the ingest invalid-key throttle
+stands down. A shared
 address (NAT, office egress) still shares one ingest throttle window, so 60 bad keys from
 one machine behind it can delay a real application's logging there for up to a minute.
 

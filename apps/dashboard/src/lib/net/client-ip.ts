@@ -114,3 +114,28 @@ export function resolveClientIp(
 
   return asClientIp(entries[entries.length - hops]);
 }
+
+/**
+ * The warning to print at server start when no proxy is trusted, or `null`.
+ *
+ * A production server that trusts no proxy has no client addresses, so the
+ * per-address throttles stand down: that is right when the app really is
+ * exposed directly, and a silent weakening when the operator simply forgot
+ * `TRUSTED_PROXY_HOPS` behind Caddy or nginx. Saying so once at start makes
+ * the second case visible without refusing to boot in the first.
+ *
+ * @param env - The environment to read.
+ * @returns The message, or `null` when a proxy is trusted or this is not a
+ *   production server.
+ */
+export function proxyTrustWarning(env: ClientIpEnvironment): string | null {
+  if (env.NODE_ENV !== "production") return null;
+  if (trustedProxyHops(env) > 0) return null;
+
+  return (
+    `[stuffs-logger] ${TRUSTED_PROXY_HOPS_VARIABLE} is not set, so no client ` +
+    "address is trusted: the ingest invalid-key throttle is off and sign-in " +
+    "attempts are limited per account only. Behind a reverse proxy, set " +
+    `${TRUSTED_PROXY_HOPS_VARIABLE}=1 (one per proxy). See docs/DEPLOYMENT.md.`
+  );
+}
