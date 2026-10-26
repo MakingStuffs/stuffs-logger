@@ -5,21 +5,9 @@ dashboard.** Built to replace the small slice of a hosted logging vendor we
 actually used, without the bill.
 
 [![CI](https://github.com/MakingStuffs/stuffs-logger/actions/workflows/ci.yml/badge.svg)](https://github.com/MakingStuffs/stuffs-logger/actions/workflows/ci.yml)
-[![Release](https://github.com/MakingStuffs/stuffs-logger/actions/workflows/release.yml/badge.svg)](https://github.com/MakingStuffs/stuffs-logger/actions/workflows/release.yml)
-[![semantic-release: conventionalcommits](https://img.shields.io/badge/semantic--release-conventionalcommits-e10079?logo=semantic-release)](https://github.com/semantic-release/semantic-release)
-[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white)](https://www.conventionalcommits.org/en/v1.0.0/)
-
 [![npm @stuffs-logger/sdk](https://img.shields.io/npm/v/@stuffs-logger/sdk?label=%40stuffs-logger%2Fsdk)](https://www.npmjs.com/package/@stuffs-logger/sdk)
 [![npm @stuffs-logger/core](https://img.shields.io/npm/v/@stuffs-logger/core?label=%40stuffs-logger%2Fcore)](https://www.npmjs.com/package/@stuffs-logger/core)
-[![npm downloads](https://img.shields.io/npm/dm/@stuffs-logger/sdk?label=downloads)](https://www.npmjs.com/package/@stuffs-logger/sdk)
-[![Bundle size](https://img.shields.io/bundlejs/size/@stuffs-logger/sdk)](https://bundlejs.com/?q=@stuffs-logger/sdk)
-[![Types](https://img.shields.io/npm/types/@stuffs-logger/sdk)](https://www.npmjs.com/package/@stuffs-logger/sdk)
-[![Node](https://img.shields.io/node/v/@stuffs-logger/sdk)](https://nodejs.org)
-
-[![Licence](https://img.shields.io/github/license/MakingStuffs/stuffs-logger)](./LICENSE)
-[![Code style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://prettier.io)
-[![Dependabot](https://img.shields.io/badge/dependabot-enabled-025E8C?logo=dependabot)](./.github/dependabot.yml)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](./LICENSE)
 
 [Changelog](./CHANGELOG.md) ·
 [SDK reference](./packages/logger-sdk/README.md) ·
